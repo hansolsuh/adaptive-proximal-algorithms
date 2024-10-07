@@ -28,9 +28,12 @@ end
 
     obj_tol = 1e-7
 
-    sol, numit = AdaProx.adaptive_proxgrad(
+    sol, numit = AdaProx.adapgm_my1(
         ones(2), f=f, g=g, rule=AdaProx.OurRule(gamma=1.0),
     )
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        ones(2), f=f, g=g, rule=AdaProx.OurRule(gamma=1.0),
+#    )
 
     @test f(sol) < obj_tol
     @test iszero(g(sol))

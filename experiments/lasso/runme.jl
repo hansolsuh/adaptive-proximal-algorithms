@@ -1,5 +1,6 @@
 include(joinpath(@__DIR__, "..", "logging.jl"))
 
+using REPL
 using Random
 using LinearAlgebra
 using Logging: with_logger, @logmsg
@@ -10,6 +11,9 @@ using LaTeXStrings
 using ProximalCore
 using ProximalOperators: NormL1
 using AdaProx
+using Infiltrator
+using Debugger
+using HDF5
 
 pgfplotsx()
 
@@ -44,7 +48,7 @@ function run_random_lasso(;
 
     p = n / pfactor # nonzeros
     rho = 1 # some positive number controlling how large solution is
-    lam = 1  
+    lam = 10
     y_star = rand(m)
     y_star ./= norm(y_star) #y^\star
     C = rand(m, n) .* 2 .- 1
@@ -61,16 +65,23 @@ function run_random_lasso(;
             if temp < 0.1 * lam
                 alpha[perm[i]] = lam
             else
-                alpha[perm[i]] = lam * rand() / temp
+                rrr = rand()
+                print(rrr)
+                print("\n")
+                alpha[perm[i]] = lam * rrr / temp
             end
         end
     end
+    print("end of alpha \n")
     A = C * diagm(0 => alpha)   # scaling the columns of Cin
     # generate the primal solution
     x_star = zeros(n)
     for i = 1:n
         if i <= p
-            x_star[perm[i]] = rand() * rho / sqrt(p) * sign(dot(A[:, perm[i]], y_star))
+            rrr = rand()
+            print(rrr)
+            print("\n")
+            x_star[perm[i]] = rrr * rho / sqrt(p) * sign(dot(A[:, perm[i]], y_star))
         end
     end
     b = A * x_star + y_star
@@ -78,46 +89,50 @@ function run_random_lasso(;
 
     @logmsg AdaProx.Record "" method=nothing it=1 objective=optimum
 
+    println(opnorm(A))
     Lf = opnorm(A)^2
     gam_init = 1 / Lf
     f = LinearLeastSquares(A, b)
     g = NormL1(lam)
+    println(gam_init)
 
-    sol, numit = AdaProx.fixed_proxgrad(
-        zeros(n),
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "PGM (fixed)"
-    )
+    @exfiltrate
+#    sol, numit = AdaProx.fixed_pgm_my(
+#    #sol, numit = AdaProx.fixed_proxgrad(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "PGM (fixed)"
+#    )
 
-    xi_values = [1, 1.5, 2]
-    for xi = xi_values
-        sol, numit = AdaProx.backtracking_proxgrad(
-            zeros(n),
-            f = AdaProx.Counting(f),
-            g = g,
-            gamma0 = gam_init,
-            xi = xi, #increase in stepsize
-            tol = tol,
-            maxit = maxit,
-            name = "PGM (backtracking)-(xi=$(xi))"
-        )
-    end
+#    xi_values = [1.5, 2]
+#    for xi = xi_values
+#        sol, numit = AdaProx.backtracking_proxgrad(
+#            zeros(n),
+#            f = AdaProx.Counting(f),
+#            g = g,
+#            gamma0 = gam_init,
+#            xi = xi, #increase in stepsize
+#            tol = tol,
+#            maxit = maxit,
+#            name = "PGM (backtracking)-(xi=$(xi))"
+#        )
+#    end
 
-    sol, numit = AdaProx.backtracking_nesterov(
-        zeros(n),
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "Nesterov (backtracking)"
-    )
-
-
+#    sol, numit = AdaProx.backtracking_nesterov(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma0 = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "Nesterov (backtracking)"
+#    )
+#
+#
     sol, numit = AdaProx.fixed_nesterov(
         zeros(n),
         f = AdaProx.Counting(f),
@@ -128,36 +143,47 @@ function run_random_lasso(;
         name = "Nesterov (fixed)"
     )
 
-    sol, numit = AdaProx.adaptive_proxgrad(
+    sol, numit = AdaProx.fixed_fista_aapga(
         zeros(n),
         f = AdaProx.Counting(f),
         g = g,
-        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
+        gamma = gam_init,
         tol = tol,
         maxit = maxit,
-        name = "AdaPGM (MM)"
+        name = "AAPGA-FISTA (fixed)"
     )
 
-    sol, numit = AdaProx.adaptive_proxgrad(
-        zeros(n),
-        f = AdaProx.Counting(f),
-        g = g,
-        rule = AdaProx.OurRule(gamma = gam_init),
-        tol = tol,
-        maxit = maxit,
-        name = "AdaPGM (Ours)"
-    )
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AdaPGM (MM)"
+#    )
 
-    @info "Running aGRAAL"
-    sol, numit = AdaProx.agraal(
-        zeros(n),
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "aGRAAL"
-    )
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        rule = AdaProx.OurRule(gamma = gam_init),
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AdaPGM (Ours)"
+#    )
+
+#    sol2, numit2 = AdaProx.adapgm_my1(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        rule = AdaProx.OurRule(gamma = gam_init),
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AdaPGM (Ours)"
+#    )
+#
+#    xxxx = numit2
 end
 
 function plot_convergence(path)
@@ -189,6 +215,7 @@ function plot_convergence(path)
 end
 
 function main()
+    run_random_lasso(m=5, n=10, pfactor=5,maxit=2000, tol=1e-7, seed=0)
     col = [
         (100, 300, 10),
         (500, 1000, 10),
@@ -210,6 +237,7 @@ function main()
     end
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end
+main()

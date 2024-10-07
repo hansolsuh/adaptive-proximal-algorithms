@@ -163,6 +163,7 @@ function main(; maxit = 5_000)
     plot_residual(path)
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end

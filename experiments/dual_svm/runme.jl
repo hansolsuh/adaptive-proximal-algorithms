@@ -58,7 +58,8 @@ function run_dsvm(
     y0 = zeros(1)
     norm_A = norm(A)
 
-    t_values = [0.01, 0.15, 0.02, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]
+#    t_values = [0.01, 0.15, 0.02, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]
+    t_values = [1]
 
     for t in t_values
         solx, soly, num_it = AdaProx.adaptive_primal_dual(
@@ -73,6 +74,7 @@ function run_dsvm(
             tol = tol,
             name = "AdaPDM (t=$t)",
         )
+        ii = num_it
     end
 
     for t in t_values
@@ -140,42 +142,44 @@ end
 function main(;maxit = 10_000)
     keys_to_log = [:method, :it, :f_evals, :norm_res]
 
-    for C  in [0.1, 1]
-        path = joinpath(@__DIR__, "svmguide3_C_$(C).jsonl")
-        with_logger(get_logger(path, keys_to_log)) do
-            run_dsvm(
-                joinpath(@__DIR__, "../", "datasets", "svmguide3"),
-                maxit = maxit,
-                tol = 1e-5,
-                C = C
-            )
-        end
-        plot_residual(path)
+    for C  in [1]
+#    for C  in [0.1, 1]
+#        path = joinpath(@__DIR__, "svmguide3_C_$(C).jsonl")
+#        with_logger(get_logger(path, keys_to_log)) do
+#            run_dsvm(
+#                joinpath(@__DIR__, "../", "datasets", "svmguide3"),
+#                maxit = maxit,
+#                tol = 1e-5,
+#                C = C
+#            )
+#        end
+#        plot_residual(path)
+#
+#        path = joinpath(@__DIR__, "mushrooms_C_$(C).jsonl")
+#        with_logger(get_logger(path, keys_to_log)) do
+#            run_dsvm(
+#                joinpath(@__DIR__, "../", "datasets", "mushrooms"),
+#                maxit = maxit,
+#                tol = 1e-5,
+#                C = C
+#            )
+#        end
+#        plot_residual(path)
 
-        path = joinpath(@__DIR__, "mushrooms_C_$(C).jsonl")
-        with_logger(get_logger(path, keys_to_log)) do
-            run_dsvm(
-                joinpath(@__DIR__, "../", "datasets", "mushrooms"),
-                maxit = maxit,
-                tol = 1e-5,
-                C = C
-            )
-        end
-        plot_residual(path)
-
-        path = joinpath(@__DIR__, "heart_scale_C_$(C).jsonl")
-        with_logger(get_logger(path, keys_to_log)) do
+#        path = joinpath(@__DIR__, "heart_scale_C_$(C).jsonl")
+#        with_logger(get_logger(path, keys_to_log)) do
             run_dsvm(
                 joinpath(@__DIR__, "../", "datasets", "heart_scale"),
                 maxit = maxit,
                 tol = 1e-5,
                 C = C
             )
-        end
-        plot_residual(path)
+#        end
+#        plot_residual(path)
     end 
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end

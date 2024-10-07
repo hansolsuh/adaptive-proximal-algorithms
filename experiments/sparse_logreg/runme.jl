@@ -62,7 +62,7 @@ function run_logreg_l1_data(
 
     gam_init = 1.0 / Lf
     # run algorithm with 1/10 the tolerance to get "accurate" solution
-    sol, numit = AdaProx.adaptive_proxgrad(
+    sol, numit = AdaProx.adapgm_my1(
         x0,
         f = f,
         g = g,
@@ -71,79 +71,88 @@ function run_logreg_l1_data(
         maxit = maxit * 10,
         name = nothing
     )
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        x0,
+#        f = f,
+#        g = g,
+#        rule = AdaProx.OurRule(gamma = gam_init),
+#        tol = tol / 10,
+#        maxit = maxit * 10,
+#        name = nothing
+#    )
 
-    sol, numit = AdaProx.fixed_proxgrad(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "PGM (1/Lf)"
-    )
+#    sol, numit = AdaProx.fixed_proxgrad(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "PGM (1/Lf)"
+#    )
+#
+#    xi_values = [1.5, 2]
+#    for xi = xi_values
+#        sol, numit = AdaProx.backtracking_proxgrad(
+#            zeros(n),
+#            f = AdaProx.Counting(f),
+#            g = g,
+#            gamma0 = gam_init,
+#            xi = xi, #increase in stepsize
+#            tol = tol,
+#            maxit = maxit/2,
+#            name = "PGM (backtracking)-(xi=$(xi))"
+#        )
+#    end
+#
+#    sol, numit = AdaProx.backtracking_nesterov(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma0 = gam_init,
+#        tol = tol,
+#        maxit = maxit/2,
+#        name = "Nesterov (backtracking)"
+#    )
+#    sol, numit = AdaProx.fixed_nesterov(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma = gam_init,
+#        tol = tol,
+#        maxit = maxit/2,
+#        name = "Nesterov (fixed)"
+#    )
+#
+##    sol, numit = AdaProx.adaptive_proxgrad(
+##        x0,
+##        f = AdaProx.Counting(f),
+##        g = g,
+##        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
+##        tol = tol,
+##        maxit = maxit,
+##        name = "AdaPGM (MM)"
+##    )
+#
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        rule = AdaProx.OurRule(gamma = gam_init),
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AdaPGM (Ours)"
+#    )
 
-    xi_values = [1, 1.5, 2]
-    for xi = xi_values
-        sol, numit = AdaProx.backtracking_proxgrad(
-            zeros(n),
-            f = AdaProx.Counting(f),
-            g = g,
-            gamma0 = gam_init,
-            xi = xi, #increase in stepsize
-            tol = tol,
-            maxit = maxit/2,
-            name = "PGM (backtracking)-(xi=$(xi))"
-        )
-    end
-
-    sol, numit = AdaProx.backtracking_nesterov(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit/2,
-        name = "Nesterov (backtracking)"
-    )
-    sol, numit = AdaProx.fixed_nesterov(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        tol = tol,
-        maxit = maxit/2,
-        name = "Nesterov (fixed)"
-    )
-
-    sol, numit = AdaProx.adaptive_proxgrad(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
-        tol = tol,
-        maxit = maxit,
-        name = "AdaPGM (MM)"
-    )
-
-    sol, numit = AdaProx.adaptive_proxgrad(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        rule = AdaProx.OurRule(gamma = gam_init),
-        tol = tol,
-        maxit = maxit,
-        name = "AdaPGM (Ours)"
-    )
-
-    sol, numit = AdaProx.agraal(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "aGRAAL"
-    )
+#    sol, numit = AdaProx.agraal(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma0 = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "aGRAAL"
+#    )
 end
 
 function plot_convergence(path)
@@ -175,34 +184,50 @@ function plot_convergence(path)
 end
 
 function main()
-    path = joinpath(@__DIR__, "mushrooms.jsonl")
+#    path = joinpath(@__DIR__, "mushrooms.jsonl")
+#    with_logger(get_logger(path)) do
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
+#            lam = 0.01, maxit = 2000, tol = 1e-7
+#        )
+#    end
+#    plot_convergence(path)
+
+    path = joinpath(@__DIR__, "heart_scale.jsonl")
     with_logger(get_logger(path)) do
         run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
+            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
             lam = 0.01, maxit = 2000, tol = 1e-7
         )
     end
     plot_convergence(path)
 
-    path = joinpath(@__DIR__, "a5a.jsonl")
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "a5a"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
-    plot_convergence(path)
 
-    path = joinpath(@__DIR__, "phishing.jsonl")
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "phishing"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
+
+#    path = joinpath(@__DIR__, "heart_scale.jsonl")
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
+#            lam = 0.01, maxit = 2000, tol = 1e-7
+#        )
+#    with_logger(get_logger(path)) do
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
+#            lam = 0.01, maxit = 2000, tol = 1e-7
+#        )
+#    end
+#    plot_convergence(path)
+
+#    path = joinpath(@__DIR__, "phishing.jsonl")
+#    with_logger(get_logger(path)) do
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "phishing"),
+#            lam = 0.01, maxit = 2000, tol = 1e-7
+#        )
+#    end
     plot_convergence(path)
 end
 
+main()
 if abspath(PROGRAM_FILE) == @__FILE__
     main()
 end

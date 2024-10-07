@@ -3,6 +3,8 @@ module AdaProx
 using Logging
 using LinearAlgebra
 using ProximalCore: prox, convex_conjugate, Zero
+using Infiltrator
+using Debugger
 
 const Record = Logging.LogLevel(-1)
 
@@ -31,10 +33,11 @@ upper_bound(x, f_x, grad_x, z, gamma) = f_x + real(dot(grad_x, z - x)) + 1 / (2 
 # MOS-SIAM Series on Optimization, SIAM, 2017.
 # https://my.siam.org/Store/Product/viewproduct/?ProductId=29044686
 
-function backtrack_stepsize(gamma, f, g, x, f_x, grad_x, shrink=0.5)
+function backtrack_stepsize(gamma, f, g, x, f_x, grad_x, shrink=0.5, it=nothing)
     z, g_z = prox(g, x - gamma * grad_x, gamma)
     ub_z = upper_bound(x, f_x, grad_x, z, gamma)
     f_z, pb = eval_with_pullback(f, z)
+    back_it = 0
     while f_z > ub_z
         gamma *= shrink
         if gamma < 1e-12
@@ -43,7 +46,9 @@ function backtrack_stepsize(gamma, f, g, x, f_x, grad_x, shrink=0.5)
         z, g_z = prox(g, x - gamma * grad_x, gamma)
         ub_z = upper_bound(x, f_x, grad_x, z, gamma)
         f_z, pb = eval_with_pullback(f, z)
+        back_it = back_it + 1
     end
+#    println("backtracking iter : $(back_it), stepsize: $(gamma) ")
     return gamma, z, f_z, g_z, pb
 end
 
@@ -51,7 +56,7 @@ function backtracking_proxgrad(x0; f, g, gamma0, xi = 1.0, shrink = 0.5, tol = 1
     x, z, gamma = x0, x0, gamma0
     f_x, grad_x = eval_with_gradient(f, x)
     for it = 1:maxit
-        gamma, z, f_z, g_z, pb = backtrack_stepsize(xi * gamma, f, g, x, f_x, grad_x, shrink)
+        gamma, z, f_z, g_z, pb = backtrack_stepsize(xi * gamma, f, g, x, f_x, grad_x, shrink, it)
         norm_res = norm(z - x) / gamma
         @logmsg Record "" method=name it gamma norm_res objective=(f_z + g_z) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         if norm_res <= tol
@@ -59,9 +64,57 @@ function backtracking_proxgrad(x0; f, g, gamma0, xi = 1.0, shrink = 0.5, tol = 1
         end
         x, f_x = z, f_z
         grad_x = pb()
+#        println("backtracking proxgrad, iter: $(it), f_val: $(f_x), stepsize: $(gamma)")
     end
     return z, maxit
 end
+
+function backtrack_stepsize_nm(gamma, f, g, x, fvals, grad_x, shrink=0.5, it=nothing)
+    z, g_z = prox(g, x - gamma * grad_x, gamma)
+    f_x = maximum(fvals)
+    ub_z = upper_bound(x, f_x, grad_x, z, gamma)
+    f_z, pb = eval_with_pullback(f, z)
+    back_it = 0
+    while f_z > ub_z
+        gamma *= shrink
+        if gamma < 1e-12
+            @error "step size became too small ($gamma)"
+        end
+        z, g_z = prox(g, x - gamma * grad_x, gamma)
+        ub_z = upper_bound(x, f_x, grad_x, z, gamma)
+        f_z, pb = eval_with_pullback(f, z)
+        back_it = back_it + 1
+    end
+    println("fvals: $(fvals)")
+end
+
+function backtracking_proxgrad_nm(x0; f, g, gamma0, xi = 1.0, shrink = 0.5, tol = 1e-5, maxit = 100_000, name = "Backtracking PG")
+    hist_size = 10
+    hist_idx = 1
+    fvals = zeros(hist_size)
+    x, z, gamma = x0, x0, gamma0
+    f_x, grad_x = eval_with_gradient(f, x)
+    fvals[1] = f_x
+    for it = 1:maxit
+        gamma, z, f_z, g_z, pb = backtrack_stepsize_nm(xi * gamma, f, g, x, fvals, grad_x, shrink, it)
+        hist_idx = hist_idx + 1
+        if hist_idx > hist_size
+            hist_idx = 1
+        end
+        fvals[hist_idx] = f_z
+        norm_res = norm(z - x) / gamma
+        @logmsg Record "" method=name it gamma norm_res objective=(f_z + g_z) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        if norm_res <= tol
+            return z, it
+        end
+        x, f_x = z, f_z
+        grad_x = pb()
+#        println("backtracking proxgrad, iter: $(it), f_val: $(f_x), stepsize: $(gamma)")
+    end
+    return z, maxit
+end
+
+
 
 function backtracking_nesterov(x0; f, g, gamma0, shrink = 0.5, tol = 1e-5, maxit = 100_000, name = "Backtracking Nesterov")
     x, z, gamma = x0, x0, gamma0
@@ -69,10 +122,11 @@ function backtracking_nesterov(x0; f, g, gamma0, shrink = 0.5, tol = 1e-5, maxit
     f_x, grad_x = eval_with_gradient(f, x)
     for it = 1:maxit
         z_prev = z
-        gamma, z, f_z, g_z, _ = backtrack_stepsize(gamma, f, g, x, f_x, grad_x, shrink)
+        gamma, z, f_z, g_z, _ = backtrack_stepsize(gamma, f, g, x, f_x, grad_x, shrink, it)
         norm_res = norm(z - x) / gamma
         @logmsg Record "" method=name it gamma norm_res objective=(f_z + g_z) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         if norm_res <= tol
+            @infiltrate
             return z, it
         end
         theta_prev = theta
@@ -88,19 +142,7 @@ end
 # See Chambolle, Pock, "An introduction to continuous optimization for imaging," 
 # Acta Numerica, 25 (2016), 161–319.
 
-function fixed_nesterov(
-    x0;
-    f,
-    g,
-    Lf = nothing,
-    muf = 0,
-    mug = 0,
-    gamma = nothing,
-    theta = nothing,
-    tol = 1e-5,
-    maxit = 100_000,
-    name = "Fixed Nesterov"
-)
+function fixed_nesterov(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "Fixed Nesterov")
     @assert (gamma === nothing) != (Lf === nothing)
     if gamma === nothing
         gamma = 1 / Lf
@@ -131,6 +173,59 @@ function fixed_nesterov(
         x_prev = x
         x, g_x = prox(g, z - gamma * grad_z, gamma)
         norm_res = norm(x - z) / gamma
+        without_counting() do
+            @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+        if norm_res <= tol
+            return x, it
+        end
+    end
+    return x, maxit
+end
+
+function fixed_fista_aapga(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "Fixed Nesterov")
+    @assert (gamma === nothing) != (Lf === nothing)
+    if gamma === nothing
+        gamma = 1 / Lf
+    end
+    mu = muf + mug
+    q = gamma * mu / (1 + gamma * mug)
+    @assert q < 1
+    if theta === nothing
+        theta = if q > 0
+            1 / sqrt(q)
+        else
+            0
+        end
+    end
+    @assert 0 <= theta <= 1 / sqrt(q)
+    x, x_prev = x0, x0
+    y, y_prev = x0, x0
+    _, grad_x = eval_with_gradient(f, x)
+    gvec = x - gamma * grad_x
+    for it = 1:maxit
+
+        x_prev = x
+        x, g_x = prox(g, y, gamma)
+        grad_prev = grad_x
+        _, grad_x = eval_with_gradient(f, x)
+        y_prev = y
+        gvec_prev = gvec
+
+        gvec = x - gamma * grad_x
+
+
+        theta_prev = theta
+        if mu == 0
+            theta = (1 + sqrt(1 + 4 * theta_prev^2)) / 2
+            beta = (theta_prev - 1) / theta
+        else
+            theta = (1 - q * theta_prev^2 + sqrt((1 - q * theta_prev^2)^2 + 4 * theta_prev^2)) / 2
+            beta = (theta_prev - 1) * (1 + gamma * mug - theta * gamma * mu) / theta / (1 - gamma * muf)
+        end
+        y = gvec + beta * (gvec - gvec_prev)
+
+        norm_res = norm(x - gvec) / gamma
         without_counting() do
             @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         end
@@ -229,6 +324,74 @@ function stepsize(rule::MalitskyMishchenkoRule, (gamma_prev, rho), x1, grad_x1, 
     return (gamma, gamma * rule.t^2), (gamma, gamma / gamma_prev)
 end
 
+
+function adapgm_my1(x; f, g, rule, tol = 1e-5, maxit = 10_000, name = "MyAdaPGM")
+    (gamma, sigma), state = stepsize(rule)
+
+    _, grad_x = eval_with_gradient(f, x)
+    v = x - gamma * (grad_x)
+    x_prev, grad_x_prev = x, grad_x
+    x, _ = prox(g, v, gamma)
+
+    for it = 1:maxit
+        f_x, grad_x = eval_with_gradient(f, x)
+
+        primal_res = (v - x) / gamma + grad_x
+
+        gamma_prev = gamma
+        (gamma, sigma), state = stepsize(rule, state, x, grad_x, x_prev, grad_x_prev)
+
+        norm_res = sqrt(norm(primal_res)^2)
+
+        without_counting() do
+            @logmsg Record "" method=name it gamma sigma norm_res objective=(f_x + g(x)) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+
+        if norm_res <= tol
+            return x, it
+        end
+
+        v = x - gamma * (grad_x)
+        x_prev, grad_x_prev = x, grad_x
+        x, _ = prox(g, v, gamma)
+    end
+    return x, y, maxit
+end
+
+
+struct OurRulePlus{R}
+    gamma::R
+    xi::R
+    nu::R
+    r::R
+end
+
+function OurRulePlus(; gamma = 0, nu = 1, xi = 1, r = 1/2)
+    _gamma = if gamma > 0
+        gamma
+    else
+        error("you must provide gamma > 0")
+    end
+    R = typeof(_gamma)
+    return OurRulePlus{R}(_gamma, R(xi), R(nu), R(r))
+end
+
+function stepsize(rule::OurRulePlus)
+    gamma = rule.gamma
+    return (gamma, gamma), (gamma, gamma)
+end
+
+function stepsize(rule::OurRulePlus, (gamma1, gamma0), x1, grad_x1, x0, grad_x0)
+    C = norm(grad_x1 - grad_x0)^2 / dot(grad_x1 - grad_x0, x1 - x0) |> nan_to_zero
+    L = dot(grad_x1 - grad_x0, x1 - x0) / norm(x1 - x0)^2 |> nan_to_zero
+    D = 1- 2*rule.r + gamma1 * L * (gamma1 * C + 2*(rule.r-1) ) |> nan_to_zero
+    gamma = gamma1 * min(
+        sqrt( 1/(rule.r*(rule.nu + rule.xi)) + gamma1 / gamma0),
+        sqrt( (rule.nu*(1+rule.xi) -1)/(rule.nu*(rule.nu+rule.xi)) ) / sqrt(max(D,0))
+    )
+    return (gamma, gamma), (gamma, gamma1)
+end
+
 struct OurRule{R}
     gamma::R
     t::R
@@ -272,41 +435,129 @@ function stepsize(rule::OurRule, (gamma1, gamma0), x1, grad_x1, x0, grad_x0)
     return (gamma, sigma), (gamma, gamma1)
 end
 
+function adaptive_primal_dual_my(x,y; f, g, h, A, rule, tol = 1e-5, maxit = 10_000, name = "AdaPDMMy",)
+    (gamma, sigma), state = stepsize(rule)
+    h_conj = convex_conjugate(h)
 
+    A_x = A * x
+    _, grad_x = eval_with_gradient(f, x)
+    At_y = A' * y
+    v = x - gamma * (grad_x + At_y)
+    x_prev, A_x_prev, grad_x_prev = x, A_x, grad_x
+    x, _ = prox(g, v, gamma)
 
-struct OurRulePlus{R}
-    gamma::R
-    xi::R
-    nu::R
-    r::R
-end
+    for it = 1:maxit
+        A_x = A * x
+        f_x, grad_x = eval_with_gradient(f, x)
 
-function OurRulePlus(; gamma = 0, nu = 1, xi = 1, r = 1/2)
-    _gamma = if gamma > 0
-        gamma
-    else
-        error("you must provide gamma > 0")
+        primal_res = (v - x) / gamma + grad_x + At_y
+
+        gamma_prev = gamma
+        (gamma, sigma), state = stepsize(rule, state, x, grad_x, x_prev, grad_x_prev)
+        rho = gamma / gamma_prev
+
+        w = y + sigma * ((1 + rho) * A_x - rho * A_x_prev)
+        y, _ = prox(h_conj, w, sigma)
+
+        dual_res = (w - y) / sigma - A_x
+        norm_res = sqrt(norm(primal_res)^2 + norm(dual_res)^2)
+
+        without_counting() do
+            @logmsg Record "" method=name it gamma sigma norm_res objective=(f_x + g(x) + h(A_x)) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) prox_h_evals=prox_count(h) A_evals=mul_count(A) At_evals=amul_count(A) f_evals=eval_count(f)
+        end
+
+        if norm_res <= tol
+            return x, y, it
+        end
+
+        At_y = A' * y
+        v = x - gamma * (grad_x + At_y)
+        x_prev, A_x_prev, grad_x_prev = x, A_x, grad_x
+        x, _ = prox(g, v, gamma)
     end
-    R = typeof(_gamma)
-    return OurRulePlus{R}(_gamma, R(xi), R(nu), R(r))
+    return x, y, maxit
 end
 
-function stepsize(rule::OurRulePlus)
-    gamma = rule.gamma
-    return (gamma, gamma), (gamma, gamma)
-end
+function adaptive_linesearch_primal_dual_my(x, y; f, g, h, A, gamma = nothing, eta = 1.0, t = 1.0, delta = 1e-8, Theta = 1.2, r = 2, R = 0.95, tol = 1e-5, maxit = 10_000, name = "AdaPDM+", )
+    @assert eta > 0 "eta must be positive"
+    @assert Theta > (delta + 1) "must be Theta > (delta + 1)"
 
-function stepsize(rule::OurRulePlus, (gamma1, gamma0), x1, grad_x1, x0, grad_x0)
-    C = norm(grad_x1 - grad_x0)^2 / dot(grad_x1 - grad_x0, x1 - x0) |> nan_to_zero
-    L = dot(grad_x1 - grad_x0, x1 - x0) / norm(x1 - x0)^2 |> nan_to_zero
-    D = 1- 2*rule.r + gamma1 * L * (gamma1 * C + 2*(rule.r-1) ) |> nan_to_zero
-    gamma = gamma1 * min(
-        sqrt( 1/(rule.r*(rule.nu + rule.xi)) + gamma1 / gamma0),
-        sqrt( (rule.nu*(1+rule.xi) -1)/(rule.nu*(rule.nu+rule.xi)) ) / sqrt(max(D,0))
-    )
-    return (gamma, gamma), (gamma, gamma1)
-end
+    if gamma === nothing
+        gamma = 1 / (2 * Theta * t * eta)
+    end
 
+    f_val = 0
+    g_val = 0
+    h_val = 0
+    @assert gamma <= 1 / (2 * Theta * t * eta) "gamma is too large"
+
+    delta1 = 1 + delta
+    gamma_prev = gamma
+    h_conj = convex_conjugate(h)
+
+    A_x = A * x
+    f_val, grad_x = eval_with_gradient(f, x)
+    At_y = A' * y
+    v = x - gamma * (grad_x + At_y)
+    x_prev, A_x_prev, grad_x_prev = x, A_x, grad_x
+    x, g_val = prox(g, v, gamma)
+
+    for it = 1:maxit
+        A_x = A * x
+        f_x, grad_x = eval_with_gradient(f, x)
+
+        primal_res = (v - x) / gamma + grad_x + At_y
+
+        C = norm(grad_x - grad_x_prev)^2 / dot(grad_x - grad_x_prev, x - x_prev) |> nan_to_zero
+        L = dot(grad_x - grad_x_prev, x - x_prev) / norm(x - x_prev)^2 |> nan_to_zero
+        Delta = gamma * L * (gamma * C - 1)
+        xi_bar = t^2 * gamma^2 * eta^2 * delta1^2
+        m4xim1 = (1 - 4 * xi_bar)
+
+        eta = R * eta
+        w = y
+        sigma = t^2 * gamma
+        ls_iter = 0
+        while true
+            gamma_next = min(
+                gamma * sqrt(1 + gamma / gamma_prev),
+                1 / (2 * Theta * t * eta),
+                gamma * sqrt(m4xim1 / (2 * delta1 * (Delta + sqrt(Delta^2 + m4xim1 * (t * eta * gamma)^2)))),
+            )
+            rho = gamma_next / gamma
+            sigma = t^2 * gamma_next
+            w = y + sigma * ((1 + rho) * A_x - rho * A_x_prev)
+            y_next, h_val = prox(h_conj, w, sigma)
+            At_y_next = A' * y_next
+            if eta >= norm(At_y_next - At_y) / norm(y_next - y)
+                gamma, gamma_prev = gamma_next, gamma
+                y, At_y = y_next, At_y_next
+                break
+            end
+            eta *= r
+            ls_iter = ls_iter + 1
+        end
+
+        dual_res = (w - y) / sigma - A_x
+        norm_res = sqrt(norm(primal_res)^2 + norm(dual_res)^2)
+
+        without_counting() do
+            @logmsg Record "" method=name it gamma sigma norm_res objective=(f_x + g(x) + h(A_x)) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) prox_h_evals=prox_count(h) A_evals=mul_count(A) At_evals=amul_count(A) f_evals=eval_count(f)
+        end
+        if norm_res <= tol
+            return x, y, it
+        end
+
+        funcval = f_val+g_val+h_val
+        println("Iter : $(it), Function value: $(funcval), LS iter : $(ls_iter), residual: $(norm_res)")
+
+        v = x - gamma * (grad_x + At_y)
+        x_prev, A_x_prev, grad_x_prev = x, A_x, grad_x
+        x, g_val = prox(g, v, gamma)
+    end
+    println("norm_res: $(norm_res)")
+    return x, y, maxit
+end
 
 
 function adaptive_primal_dual(
@@ -420,6 +671,43 @@ function adaptive_proxgrad(x; f, g, rule, tol = 1e-5, maxit = 100_000, name = "A
     return x, numit
 end
 
+function fixed_pgm_my(x; f, g, gamma, tol = 1e-5, maxit = 10_000, name = "MyFixedPGM")
+    @infiltrate
+    rule = FixedStepsize(gamma, one(gamma))
+    (gamma, sigma), state = stepsize(rule)
+    @infiltrate
+
+    _, grad_x = eval_with_gradient(f, x)
+    v = x - gamma * (grad_x)
+    x_prev, grad_x_prev = x, grad_x
+    x, _ = prox(g, v, gamma)
+
+    for it = 1:maxit
+        f_x, grad_x = eval_with_gradient(f, x)
+
+        primal_res = (v - x) / gamma + grad_x
+
+        gamma_prev = gamma
+
+        norm_res = sqrt(norm(primal_res)^2)
+
+        without_counting() do
+            @logmsg Record "" method=name it gamma sigma norm_res objective=(f_x + g(x)) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+
+        if norm_res <= tol
+            @infiltrate
+            return x, it
+        end
+
+        v = x - gamma * (grad_x)
+        x_prev, grad_x_prev = x, grad_x
+        x, _ = prox(g, v, gamma)
+    end
+    return x, maxit
+end
+
+
 function auto_adaptive_proxgrad(x; f, g, gamma = nothing, tol = 1e-5, maxit = 100_000, name = "AutoAdaPGM")
     _, grad_x = eval_with_gradient(f, x)
 
@@ -513,6 +801,7 @@ function adaptive_linesearch_primal_dual(
         eta = R * eta
         w = y
         sigma = t^2 * gamma
+        ls_it = 0
         while true
             gamma_next = min(
                 gamma * sqrt(1 + gamma / gamma_prev),
@@ -527,9 +816,11 @@ function adaptive_linesearch_primal_dual(
             if eta >= norm(At_y_next - At_y) / norm(y_next - y)
                 gamma, gamma_prev = gamma_next, gamma
                 y, At_y = y_next, At_y_next
+                println("iter: $(it), ls iter: $(ls_it)")
                 break
             end
             eta *= r
+            ls_it = ls_it + 1
         end
 
         dual_res = (w - y) / sigma - A_x
