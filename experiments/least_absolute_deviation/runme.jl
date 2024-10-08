@@ -46,52 +46,55 @@ function run_least_absolute_deviation(
     norm_A = norm(A)
 #    t_values = [0.01, 0.15, 0.02, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]
     t_values = [1]
-#    solx, soly, numit = AdaProx.condat_vu(
-#        zeros(n + 1),
-#        zeros(m);
-#        f = f,
-#        g = g,
-#        h = h,
-#        A = AdaProx.Counting(A),
-#        Lf = Lf,
-#        norm_A,
-#        maxit = maxit,
-#        tol = tol,
-#        name = "Condat-Vu"
-#    )
 
-#    for t in t_values
-#        solx, soly, numit = AdaProx.malitsky_pock(
-#            zeros(n + 1),
-#            zeros(m);
-#            f = f,
-#            g = g,
-#            h = h,
-#            A = AdaProx.Counting(A),
-#            sigma = 1.0,
-#            t = t,
-#            maxit = maxit,
-#            tol = tol,
-#            name = "Malitsky-Pock (t=$t)",
-#        )
-#    end
-#    maxit = 1000
-#    for t in t_values
-#        solx, soly, numit = AdaProx.adaptive_linesearch_primal_dual_my(
-#            zeros(n + 1),
-#            zeros(m);
-#            f = f,
-#            g = g,
-#            h = h,
-#            A = AdaProx.Counting(A),
-##            eta = norm_A,
-#            eta = 1,
-#            t = t,
-#            maxit = maxit,
-#            tol = tol,
-#            name = "AdaPDM+ (t=$t)",
-#        )
-#    end
+    #Comment out unneeded method
+    solx, soly, numit = AdaProx.condat_vu(
+        zeros(n + 1),
+        zeros(m);
+        f = f,
+        g = g,
+        h = h,
+        A = AdaProx.Counting(A),
+        Lf = Lf,
+        norm_A,
+        maxit = maxit,
+        tol = tol,
+        name = "Condat-Vu"
+    )
+
+    for t in t_values
+        solx, soly, numit = AdaProx.malitsky_pock(
+            zeros(n + 1),
+            zeros(m);
+            f = f,
+            g = g,
+            h = h,
+            A = AdaProx.Counting(A),
+            sigma = 1.0,
+            t = t,
+            maxit = maxit,
+            tol = tol,
+            name = "Malitsky-Pock (t=$t)",
+        )
+    end
+
+    # eta = norm_A for non-linesearch, eta = 1 to trigger linesearch (kinda like bool)
+    for t in t_values
+        solx, soly, numit = AdaProx.adaptive_linesearch_primal_dual_my(
+            zeros(n + 1),
+            zeros(m);
+            f = f,
+            g = g,
+            h = h,
+            A = AdaProx.Counting(A),
+#            eta = norm_A,
+            eta = 1,
+            t = t,
+            maxit = maxit,
+            tol = tol,
+            name = "AdaPDM+ (t=$t)",
+        )
+    end
 
     for t in t_values
         solx, soly, numit = AdaProx.adaptive_linesearch_primal_dual(
@@ -146,40 +149,44 @@ end
 function main(; maxit = 5_000)
     keys_to_log = [:method, :norm_res, :A_evals, :At_evals]
 
-#    path = joinpath(@__DIR__, "cpusmall_scale.jsonl")
-#    with_logger(get_logger(path, keys_to_log)) do
-#        run_least_absolute_deviation(
-#            joinpath(@__DIR__, "../", "datasets", "cpusmall_scale"),
-#            maxit = maxit,
-#            tol = 1e-5,
-#            lambda = 1e1,
-#        )
-#    end
-#    plot_residual(path)
-#
-#    path = joinpath(@__DIR__, "abalone.jsonl")
-#    with_logger(get_logger(path, keys_to_log)) do
-#        run_least_absolute_deviation(
-#            joinpath(@__DIR__, "../", "datasets", "abalone"),
-#            maxit = maxit,
-#            tol = 1e-5,
-#            lambda = 1e1,
-#        )
-#    end
-#    plot_residual(path)
-#
-#    path = joinpath(@__DIR__, "housing_scale.jsonl")
-#    with_logger(get_logger(path, keys_to_log)) do
+    #Housing scale is smallest dataset
+    #Perhaps comment out other problem sets
+    path = joinpath(@__DIR__, "cpusmall_scale.jsonl")
+    with_logger(get_logger(path, keys_to_log)) do
+        run_least_absolute_deviation(
+            joinpath(@__DIR__, "../", "datasets", "cpusmall_scale"),
+            maxit = maxit,
+            tol = 1e-5,
+            lambda = 1e1,
+        )
+    end
+    plot_residual(path)
+
+    path = joinpath(@__DIR__, "abalone.jsonl")
+    with_logger(get_logger(path, keys_to_log)) do
+        run_least_absolute_deviation(
+            joinpath(@__DIR__, "../", "datasets", "abalone"),
+            maxit = maxit,
+            tol = 1e-5,
+            lambda = 1e1,
+        )
+    end
+    plot_residual(path)
+
+    path = joinpath(@__DIR__, "housing_scale.jsonl")
+    with_logger(get_logger(path, keys_to_log)) do
         run_least_absolute_deviation(
             joinpath(@__DIR__, "../", "datasets", "housing_scale"),
             maxit = maxit,
             tol = 1e-5,
             lambda = 1e1,
         )
-#    end
-#    plot_residual(path)
+    end
+    plot_residual(path)
 end
 
+# Just main() for debuging on VSCode,
+# if... for running it on terminal to generate plot,
 main()
 #if abspath(PROGRAM_FILE) == @__FILE__
 #    main()

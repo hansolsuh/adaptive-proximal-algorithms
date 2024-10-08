@@ -1,6 +1,5 @@
 include(joinpath(@__DIR__, "..", "logging.jl"))
 
-using REPL
 using Random
 using LinearAlgebra
 using Logging: with_logger, @logmsg
@@ -13,7 +12,6 @@ using ProximalOperators: NormL1
 using AdaProx
 using Infiltrator
 using Debugger
-using HDF5
 
 pgfplotsx()
 
@@ -48,7 +46,7 @@ function run_random_lasso(;
 
     p = n / pfactor # nonzeros
     rho = 1 # some positive number controlling how large solution is
-    lam = 10
+    lam = 10 # hsuh: I change it from 1 to 10
     y_star = rand(m)
     y_star ./= norm(y_star) #y^\star
     C = rand(m, n) .* 2 .- 1
@@ -66,21 +64,16 @@ function run_random_lasso(;
                 alpha[perm[i]] = lam
             else
                 rrr = rand()
-                print(rrr)
-                print("\n")
                 alpha[perm[i]] = lam * rrr / temp
             end
         end
     end
-    print("end of alpha \n")
     A = C * diagm(0 => alpha)   # scaling the columns of Cin
     # generate the primal solution
     x_star = zeros(n)
     for i = 1:n
         if i <= p
             rrr = rand()
-            print(rrr)
-            print("\n")
             x_star[perm[i]] = rrr * rho / sqrt(p) * sign(dot(A[:, perm[i]], y_star))
         end
     end
@@ -89,50 +82,48 @@ function run_random_lasso(;
 
     @logmsg AdaProx.Record "" method=nothing it=1 objective=optimum
 
-    println(opnorm(A))
     Lf = opnorm(A)^2
     gam_init = 1 / Lf
     f = LinearLeastSquares(A, b)
     g = NormL1(lam)
-    println(gam_init)
 
-    @exfiltrate
-#    sol, numit = AdaProx.fixed_pgm_my(
-#    #sol, numit = AdaProx.fixed_proxgrad(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "PGM (fixed)"
-#    )
 
-#    xi_values = [1.5, 2]
-#    for xi = xi_values
-#        sol, numit = AdaProx.backtracking_proxgrad(
-#            zeros(n),
-#            f = AdaProx.Counting(f),
-#            g = g,
-#            gamma0 = gam_init,
-#            xi = xi, #increase in stepsize
-#            tol = tol,
-#            maxit = maxit,
-#            name = "PGM (backtracking)-(xi=$(xi))"
-#        )
-#    end
+    # Comment out un-needed method
+    sol, numit = AdaProx.fixed_proxgrad(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        tol = tol,
+        maxit = maxit,
+        name = "PGM (fixed)"
+    )
 
-#    sol, numit = AdaProx.backtracking_nesterov(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma0 = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "Nesterov (backtracking)"
-#    )
-#
-#
+    xi_values = [1.5, 2]
+    for xi = xi_values
+        sol, numit = AdaProx.backtracking_proxgrad(
+            zeros(n),
+            f = AdaProx.Counting(f),
+            g = g,
+            gamma0 = gam_init,
+            xi = xi, #increase in stepsize
+            tol = tol,
+            maxit = maxit,
+            name = "PGM (backtracking)-(xi=$(xi))"
+        )
+    end
+
+    sol, numit = AdaProx.backtracking_nesterov(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma0 = gam_init,
+        tol = tol,
+        maxit = maxit,
+        name = "Nesterov (backtracking)"
+    )
+
+
     sol, numit = AdaProx.fixed_nesterov(
         zeros(n),
         f = AdaProx.Counting(f),
@@ -237,7 +228,9 @@ function main()
     end
 end
 
+# Just main() for debuging on VSCode,
+# if... for running it on terminal to generate plot,
+main()
 #if abspath(PROGRAM_FILE) == @__FILE__
 #    main()
 #end
-main()

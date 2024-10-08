@@ -3,8 +3,7 @@ module AdaProx
 using Logging
 using LinearAlgebra
 using ProximalCore: prox, convex_conjugate, Zero
-using Infiltrator
-using Debugger
+using LinearSolve
 
 const Record = Logging.LogLevel(-1)
 
@@ -69,53 +68,6 @@ function backtracking_proxgrad(x0; f, g, gamma0, xi = 1.0, shrink = 0.5, tol = 1
     return z, maxit
 end
 
-function backtrack_stepsize_nm(gamma, f, g, x, fvals, grad_x, shrink=0.5, it=nothing)
-    z, g_z = prox(g, x - gamma * grad_x, gamma)
-    f_x = maximum(fvals)
-    ub_z = upper_bound(x, f_x, grad_x, z, gamma)
-    f_z, pb = eval_with_pullback(f, z)
-    back_it = 0
-    while f_z > ub_z
-        gamma *= shrink
-        if gamma < 1e-12
-            @error "step size became too small ($gamma)"
-        end
-        z, g_z = prox(g, x - gamma * grad_x, gamma)
-        ub_z = upper_bound(x, f_x, grad_x, z, gamma)
-        f_z, pb = eval_with_pullback(f, z)
-        back_it = back_it + 1
-    end
-    println("fvals: $(fvals)")
-end
-
-function backtracking_proxgrad_nm(x0; f, g, gamma0, xi = 1.0, shrink = 0.5, tol = 1e-5, maxit = 100_000, name = "Backtracking PG")
-    hist_size = 10
-    hist_idx = 1
-    fvals = zeros(hist_size)
-    x, z, gamma = x0, x0, gamma0
-    f_x, grad_x = eval_with_gradient(f, x)
-    fvals[1] = f_x
-    for it = 1:maxit
-        gamma, z, f_z, g_z, pb = backtrack_stepsize_nm(xi * gamma, f, g, x, fvals, grad_x, shrink, it)
-        hist_idx = hist_idx + 1
-        if hist_idx > hist_size
-            hist_idx = 1
-        end
-        fvals[hist_idx] = f_z
-        norm_res = norm(z - x) / gamma
-        @logmsg Record "" method=name it gamma norm_res objective=(f_z + g_z) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
-        if norm_res <= tol
-            return z, it
-        end
-        x, f_x = z, f_z
-        grad_x = pb()
-#        println("backtracking proxgrad, iter: $(it), f_val: $(f_x), stepsize: $(gamma)")
-    end
-    return z, maxit
-end
-
-
-
 function backtracking_nesterov(x0; f, g, gamma0, shrink = 0.5, tol = 1e-5, maxit = 100_000, name = "Backtracking Nesterov")
     x, z, gamma = x0, x0, gamma0
     theta = one(gamma)
@@ -126,7 +78,6 @@ function backtracking_nesterov(x0; f, g, gamma0, shrink = 0.5, tol = 1e-5, maxit
         norm_res = norm(z - x) / gamma
         @logmsg Record "" method=name it gamma norm_res objective=(f_z + g_z) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         if norm_res <= tol
-            @infiltrate
             return z, it
         end
         theta_prev = theta
@@ -183,7 +134,8 @@ function fixed_nesterov(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing
     return x, maxit
 end
 
-function fixed_fista_aapga(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "Fixed Nesterov")
+#Nesterov, but follows Mai-Johansson formulation - (feasible set stuff)
+function fixed_fista_aapga(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "Fixed Nesterov a la AA-MJ formulation")
     @assert (gamma === nothing) != (Lf === nothing)
     if gamma === nothing
         gamma = 1 / Lf
@@ -231,6 +183,83 @@ function fixed_fista_aapga(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = noth
         end
         if norm_res <= tol
             return x, it
+        end
+    end
+    return x, maxit
+end
+
+#Solve for alpha for AA
+# Assumes R matrix is already truncated to be of right size
+# Returns array of alpha
+function aa_lsq(R, reg)
+    RTR = R.T * R
+    n = size(RTR,2)
+    b = ones(n)
+    RTR = RTR + reg*I
+    x = RTR \ b
+    temp = sum(x)
+    alpha = x / temp
+    return alpha
+end
+
+# Takes matrix A,  appends vector x, and pops first col if colsize is > n
+function aa_appned_mat(A, x, n)
+    A = isempty(A) ? x : hcat(A, x)
+    # Discard old data
+    if size(A,2) > n
+        A = A[1:end, 2:end]
+    end
+end
+
+#AA-PGA
+function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = nothing, aa_reg = 1e-10, maxit = 10_000, name = "Anderson Accelerated Proximal Gradient by Mai-Johansson")
+    @assert (gamma === nothing) != (Lf === nothing)
+    if gamma === nothing
+        gamma = 1 / Lf
+    end
+
+    # Default size 10
+    if aa_size === nothing
+        aa_size = 10
+    end
+
+    R = Array{Float64}(undef, 0, 0)
+    G = Array{Float64}(undef, 0, 0)
+    x, x_prev = x0, x0
+    y, y_prev = x0, x0
+    fx, grad_x = eval_with_gradient(f, x)
+
+    y = x0 - gamma*grad_x
+    x = prox(g, y, gamma)
+    gk = y
+    r = gk - y
+
+    for it = 1:maxit
+
+        mk = min(aa_size, it)
+        fx, grad_x = eval_with_gradient(f, x)
+        gk = x - gamma*grad_x
+        r = gk - y
+
+        aa_append_mat(G, gk, aa_size)
+        aa_append_mat(R, r, aa_size)
+        #Solve for alpha
+        alpha = aa_lsq(R, aa_reg)
+        #Extrapolate
+        y_ext =  G * alpha
+        x_test, g_x =  prox(g, y_ext, gamma)
+
+        # sufficient descent condition
+        f_test, grad_test = eval_with_gradient(f, x_test)
+        if f_test - fx <=  -0.5*gamma*(grad_x'grad_x)
+            x = x_test
+            y = y_ext
+        else
+            x, g_x = prox(g, gk, gamma)
+            y = gk
+        end
+        without_counting() do
+            @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         end
     end
     return x, maxit

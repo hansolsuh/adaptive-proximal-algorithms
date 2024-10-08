@@ -45,7 +45,7 @@ function run_logreg_l1_data(
     tol = 1e-5,
     maxit = 1000,
 ) where {T}
-    @info "Start L1 Logistic Regression ($filename)"
+   @info "Start L1 Logistic Regression ($filename)"
 
     X, y = load_libsvm_dataset(filename, T, labels = [0.0, 1.0])
 
@@ -60,6 +60,7 @@ function run_logreg_l1_data(
 
     x0 = zeros(n)
 
+    #comment out un-needed algorithm
     gam_init = 1.0 / Lf
     # run algorithm with 1/10 the tolerance to get "accurate" solution
     sol, numit = AdaProx.adapgm_my1(
@@ -71,88 +72,88 @@ function run_logreg_l1_data(
         maxit = maxit * 10,
         name = nothing
     )
-#    sol, numit = AdaProx.adaptive_proxgrad(
-#        x0,
-#        f = f,
-#        g = g,
-#        rule = AdaProx.OurRule(gamma = gam_init),
-#        tol = tol / 10,
-#        maxit = maxit * 10,
-#        name = nothing
-#    )
+    sol, numit = AdaProx.adaptive_proxgrad(
+        x0,
+        f = f,
+        g = g,
+        rule = AdaProx.OurRule(gamma = gam_init),
+        tol = tol / 10,
+        maxit = maxit * 10,
+        name = nothing
+    )
 
-#    sol, numit = AdaProx.fixed_proxgrad(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "PGM (1/Lf)"
-#    )
-#
-#    xi_values = [1.5, 2]
-#    for xi = xi_values
-#        sol, numit = AdaProx.backtracking_proxgrad(
-#            zeros(n),
-#            f = AdaProx.Counting(f),
-#            g = g,
-#            gamma0 = gam_init,
-#            xi = xi, #increase in stepsize
-#            tol = tol,
-#            maxit = maxit/2,
-#            name = "PGM (backtracking)-(xi=$(xi))"
-#        )
-#    end
-#
-#    sol, numit = AdaProx.backtracking_nesterov(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma0 = gam_init,
-#        tol = tol,
-#        maxit = maxit/2,
-#        name = "Nesterov (backtracking)"
-#    )
-#    sol, numit = AdaProx.fixed_nesterov(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma = gam_init,
-#        tol = tol,
-#        maxit = maxit/2,
-#        name = "Nesterov (fixed)"
-#    )
-#
-##    sol, numit = AdaProx.adaptive_proxgrad(
-##        x0,
-##        f = AdaProx.Counting(f),
-##        g = g,
-##        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
-##        tol = tol,
-##        maxit = maxit,
-##        name = "AdaPGM (MM)"
-##    )
-#
-#    sol, numit = AdaProx.adaptive_proxgrad(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        rule = AdaProx.OurRule(gamma = gam_init),
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AdaPGM (Ours)"
-#    )
+    sol, numit = AdaProx.fixed_proxgrad(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        tol = tol,
+        maxit = maxit,
+        name = "PGM (1/Lf)"
+    )
 
-#    sol, numit = AdaProx.agraal(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma0 = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "aGRAAL"
-#    )
+    xi_values = [1.5, 2]
+    for xi = xi_values
+        sol, numit = AdaProx.backtracking_proxgrad(
+            zeros(n),
+            f = AdaProx.Counting(f),
+            g = g,
+            gamma0 = gam_init,
+            xi = xi, #increase in stepsize
+            tol = tol,
+            maxit = maxit/2,
+            name = "PGM (backtracking)-(xi=$(xi))"
+        )
+    end
+
+    sol, numit = AdaProx.backtracking_nesterov(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma0 = gam_init,
+        tol = tol,
+        maxit = maxit/2,
+        name = "Nesterov (backtracking)"
+    )
+    sol, numit = AdaProx.fixed_nesterov(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        tol = tol,
+        maxit = maxit/2,
+        name = "Nesterov (fixed)"
+    )
+
+    sol, numit = AdaProx.adaptive_proxgrad(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
+        tol = tol,
+        maxit = maxit,
+        name = "AdaPGM (MM)"
+    )
+
+    sol, numit = AdaProx.adaptive_proxgrad(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        rule = AdaProx.OurRule(gamma = gam_init),
+        tol = tol,
+        maxit = maxit,
+        name = "AdaPGM (Ours)"
+    )
+
+    sol, numit = AdaProx.agraal(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma0 = gam_init,
+        tol = tol,
+        maxit = maxit,
+        name = "aGRAAL"
+    )
 end
 
 function plot_convergence(path)
@@ -228,6 +229,6 @@ function main()
 end
 
 main()
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end

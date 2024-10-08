@@ -58,6 +58,7 @@ function run_dsvm(
     y0 = zeros(1)
     norm_A = norm(A)
 
+# Commented below for quick proto typing
 #    t_values = [0.01, 0.15, 0.02, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]
     t_values = [1]
 
@@ -74,7 +75,6 @@ function run_dsvm(
             tol = tol,
             name = "AdaPDM (t=$t)",
         )
-        ii = num_it
     end
 
     for t in t_values
@@ -91,7 +91,7 @@ function run_dsvm(
             tol = tol,
             name = "Malitsky-Pock (t=$t)",
         )
-    end 
+    end
 
     solx, soly, num_it = AdaProx.condat_vu(
         x0,
@@ -142,43 +142,48 @@ end
 function main(;maxit = 10_000)
     keys_to_log = [:method, :it, :f_evals, :norm_res]
 
-    for C  in [1]
-#    for C  in [0.1, 1]
-#        path = joinpath(@__DIR__, "svmguide3_C_$(C).jsonl")
-#        with_logger(get_logger(path, keys_to_log)) do
-#            run_dsvm(
-#                joinpath(@__DIR__, "../", "datasets", "svmguide3"),
-#                maxit = maxit,
-#                tol = 1e-5,
-#                C = C
-#            )
-#        end
-#        plot_residual(path)
-#
-#        path = joinpath(@__DIR__, "mushrooms_C_$(C).jsonl")
-#        with_logger(get_logger(path, keys_to_log)) do
-#            run_dsvm(
-#                joinpath(@__DIR__, "../", "datasets", "mushrooms"),
-#                maxit = maxit,
-#                tol = 1e-5,
-#                C = C
-#            )
-#        end
-#        plot_residual(path)
+#Play with below. heart_scale is smallest dataset
+#Comment out path =..., and with_logger, and plot_residual
+#if debugging on VSCode
 
-#        path = joinpath(@__DIR__, "heart_scale_C_$(C).jsonl")
-#        with_logger(get_logger(path, keys_to_log)) do
+    for C  in [0.1, 1] #Maybe only use value 1 for debugging
+        path = joinpath(@__DIR__, "svmguide3_C_$(C).jsonl")
+        with_logger(get_logger(path, keys_to_log)) do
             run_dsvm(
-                joinpath(@__DIR__, "../", "datasets", "heart_scale"),
+                joinpath(@__DIR__, "../", "datasets", "svmguide3"),
                 maxit = maxit,
                 tol = 1e-5,
                 C = C
             )
-#        end
-#        plot_residual(path)
-    end 
+        end
+        plot_residual(path)
+
+        path = joinpath(@__DIR__, "mushrooms_C_$(C).jsonl")
+        with_logger(get_logger(path, keys_to_log)) do
+            run_dsvm(
+                joinpath(@__DIR__, "../", "datasets", "mushrooms"),
+                maxit = maxit,
+                tol = 1e-5,
+                C = C
+            )
+        end
+        plot_residual(path)
+
+        path = joinpath(@__DIR__, "heart_scale_C_$(C).jsonl")
+        with_logger(get_logger(path, keys_to_log)) do
+           run_dsvm(
+               joinpath(@__DIR__, "../", "datasets", "heart_scale"),
+               maxit = maxit,
+               tol = 1e-5,
+               C = C
+           )
+        end
+        plot_residual(path)
+    end
 end
 
+# Just main() for debuging on VSCode,
+# if... for running it on terminal to generate plot,
 main()
 #if abspath(PROGRAM_FILE) == @__FILE__
 #    main()
