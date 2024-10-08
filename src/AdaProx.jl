@@ -3,7 +3,6 @@ module AdaProx
 using Logging
 using LinearAlgebra
 using ProximalCore: prox, convex_conjugate, Zero
-using LinearSolve
 
 const Record = Logging.LogLevel(-1)
 
@@ -192,7 +191,7 @@ end
 # Assumes R matrix is already truncated to be of right size
 # Returns array of alpha
 function aa_lsq(R, reg)
-    RTR = R.T * R
+    RTR = R' * R
     n = size(RTR,2)
     b = ones(n)
     RTR = RTR + reg*I
@@ -203,12 +202,13 @@ function aa_lsq(R, reg)
 end
 
 # Takes matrix A,  appends vector x, and pops first col if colsize is > n
-function aa_appned_mat(A, x, n)
+function aa_append_mat(A, x, n)
     A = isempty(A) ? x : hcat(A, x)
     # Discard old data
     if size(A,2) > n
         A = A[1:end, 2:end]
     end
+    return A
 end
 
 #AA-PGA
@@ -230,7 +230,7 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
     fx, grad_x = eval_with_gradient(f, x)
 
     y = x0 - gamma*grad_x
-    x = prox(g, y, gamma)
+    x, _ = prox(g, y, gamma)
     gk = y
     r = gk - y
 
@@ -241,12 +241,19 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
         gk = x - gamma*grad_x
         r = gk - y
 
-        aa_append_mat(G, gk, aa_size)
-        aa_append_mat(R, r, aa_size)
+        G = aa_append_mat(G, gk, aa_size)
+        R = aa_append_mat(R, r, aa_size)
         #Solve for alpha
         alpha = aa_lsq(R, aa_reg)
+        print(alpha)
+        print("\n")
         #Extrapolate
-        y_ext =  G * alpha
+        #Dirty... idk julia
+        if (size(alpha,1) == 1)
+            y_ext =  G * alpha[1]
+        else
+            y_ext =  G * alpha
+        end
         x_test, g_x =  prox(g, y_ext, gamma)
 
         # sufficient descent condition
@@ -255,9 +262,11 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
             x = x_test
             y = y_ext
         else
+            println("Iter : $(it), AA Failed")
             x, g_x = prox(g, gk, gamma)
             y = gk
         end
+        norm_res = norm(x - gk) / gamma
         without_counting() do
             @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         end
@@ -701,10 +710,8 @@ function adaptive_proxgrad(x; f, g, rule, tol = 1e-5, maxit = 100_000, name = "A
 end
 
 function fixed_pgm_my(x; f, g, gamma, tol = 1e-5, maxit = 10_000, name = "MyFixedPGM")
-    @infiltrate
     rule = FixedStepsize(gamma, one(gamma))
     (gamma, sigma), state = stepsize(rule)
-    @infiltrate
 
     _, grad_x = eval_with_gradient(f, x)
     v = x - gamma * (grad_x)
@@ -725,7 +732,6 @@ function fixed_pgm_my(x; f, g, gamma, tol = 1e-5, maxit = 10_000, name = "MyFixe
         end
 
         if norm_res <= tol
-            @infiltrate
             return x, it
         end
 

@@ -124,36 +124,46 @@ function run_logreg_l1_data(
         maxit = maxit/2,
         name = "Nesterov (fixed)"
     )
-
-    sol, numit = AdaProx.adaptive_proxgrad(
+    sol, numit = AdaProx.aapga_mj(
         x0,
         f = AdaProx.Counting(f),
         g = g,
-        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
+        gamma = gam_init,
+        aa_size = 5,
         tol = tol,
-        maxit = maxit,
-        name = "AdaPGM (MM)"
+        maxit = maxit/2,
+        name = "AA-PG-MJ"
     )
 
-    sol, numit = AdaProx.adaptive_proxgrad(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        rule = AdaProx.OurRule(gamma = gam_init),
-        tol = tol,
-        maxit = maxit,
-        name = "AdaPGM (Ours)"
-    )
-
-    sol, numit = AdaProx.agraal(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "aGRAAL"
-    )
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AdaPGM (MM)"
+#    )
+#
+#    sol, numit = AdaProx.adaptive_proxgrad(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        rule = AdaProx.OurRule(gamma = gam_init),
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AdaPGM (Ours)"
+#    )
+#
+#    sol, numit = AdaProx.agraal(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma0 = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "aGRAAL"
+#    )
 end
 
 function plot_convergence(path)
@@ -185,14 +195,14 @@ function plot_convergence(path)
 end
 
 function main()
-#    path = joinpath(@__DIR__, "mushrooms.jsonl")
-#    with_logger(get_logger(path)) do
-#        run_logreg_l1_data(
-#            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
-#            lam = 0.01, maxit = 2000, tol = 1e-7
-#        )
-#    end
-#    plot_convergence(path)
+    path = joinpath(@__DIR__, "mushrooms.jsonl")
+    with_logger(get_logger(path)) do
+        run_logreg_l1_data(
+            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
+            lam = 0.01, maxit = 2000, tol = 1e-7
+        )
+    end
+    plot_convergence(path)
 
     path = joinpath(@__DIR__, "heart_scale.jsonl")
     with_logger(get_logger(path)) do
@@ -218,17 +228,17 @@ function main()
 #    end
 #    plot_convergence(path)
 
-#    path = joinpath(@__DIR__, "phishing.jsonl")
-#    with_logger(get_logger(path)) do
-#        run_logreg_l1_data(
-#            joinpath(@__DIR__, "..", "datasets", "phishing"),
-#            lam = 0.01, maxit = 2000, tol = 1e-7
-#        )
-#    end
+    path = joinpath(@__DIR__, "phishing.jsonl")
+    with_logger(get_logger(path)) do
+        run_logreg_l1_data(
+            joinpath(@__DIR__, "..", "datasets", "phishing"),
+            lam = 0.01, maxit = 2000, tol = 1e-7
+        )
+    end
     plot_convergence(path)
 end
 
-main()
-#if abspath(PROGRAM_FILE) == @__FILE__
-#    main()
-#end
+#main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

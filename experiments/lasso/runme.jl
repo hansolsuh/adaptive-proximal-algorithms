@@ -99,29 +99,29 @@ function run_random_lasso(;
         name = "PGM (fixed)"
     )
 
-    xi_values = [1.5, 2]
-    for xi = xi_values
-        sol, numit = AdaProx.backtracking_proxgrad(
-            zeros(n),
-            f = AdaProx.Counting(f),
-            g = g,
-            gamma0 = gam_init,
-            xi = xi, #increase in stepsize
-            tol = tol,
-            maxit = maxit,
-            name = "PGM (backtracking)-(xi=$(xi))"
-        )
-    end
-
-    sol, numit = AdaProx.backtracking_nesterov(
-        zeros(n),
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "Nesterov (backtracking)"
-    )
+#    xi_values = [1.5, 2]
+#    for xi = xi_values
+#        sol, numit = AdaProx.backtracking_proxgrad(
+#            zeros(n),
+#            f = AdaProx.Counting(f),
+#            g = g,
+#            gamma0 = gam_init,
+#            xi = xi, #increase in stepsize
+#            tol = tol,
+#            maxit = maxit,
+#            name = "PGM (backtracking)-(xi=$(xi))"
+#        )
+#    end
+#
+#    sol, numit = AdaProx.backtracking_nesterov(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma0 = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "Nesterov (backtracking)"
+#    )
 
 
     sol, numit = AdaProx.fixed_nesterov(
@@ -134,15 +134,29 @@ function run_random_lasso(;
         name = "Nesterov (fixed)"
     )
 
-    sol, numit = AdaProx.fixed_fista_aapga(
+    # Comment out un-needed method
+    sol, numit = AdaProx.aapga_mj(
         zeros(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 0,
         tol = tol,
         maxit = maxit,
-        name = "AAPGA-FISTA (fixed)"
+        name = "AA-PG-MJ"
     )
+
+
+#    sol, numit = AdaProx.fixed_fista_aapga(
+#        zeros(n),
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "AAPGA-FISTA (fixed)"
+#    )
 
 #    sol, numit = AdaProx.adaptive_proxgrad(
 #        zeros(n),
@@ -206,7 +220,7 @@ function plot_convergence(path)
 end
 
 function main()
-    run_random_lasso(m=5, n=10, pfactor=5,maxit=2000, tol=1e-7, seed=0)
+    run_random_lasso(m=5, n=10, pfactor=5,maxit=200, tol=1e-7, seed=0)
     col = [
         (100, 300, 10),
         (500, 1000, 10),
