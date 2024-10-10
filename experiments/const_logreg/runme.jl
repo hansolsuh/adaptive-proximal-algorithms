@@ -203,53 +203,54 @@ end
 
 function main()
 
-        run_logreg_linf_data(
-            joinpath(@__DIR__, "..", "datasets", "madelon.t"),
-            lam = 0.1, maxit = 2000, tol = 1e-7
-        )
-
-#    path = joinpath(@__DIR__, "madelon.t.jsonl")
-#    with_logger(get_logger(path)) do
 #        run_logreg_linf_data(
 #            joinpath(@__DIR__, "..", "datasets", "madelon.t"),
 #            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
-#    end
-#    plot_convergence(path)
+
+    path = joinpath(@__DIR__, "madelon.t.jsonl")
+    with_logger(get_logger(path)) do
+        run_logreg_linf_data(
+            joinpath(@__DIR__, "..", "datasets", "madelon.t"),
+            lam = 0.1, maxit = 2000, tol = 1e-7
+        )
+    end
+    plot_convergence(path)
+#below examples really dont work. dont feel like searching for lambda weight
 #    path = joinpath(@__DIR__, "mushrooms.jsonl")
 #    with_logger(get_logger(path)) do
-#        run_logreg_l1_data(
+#        run_logreg_linf_data(
 #            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
 #            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
 #    end
 #    plot_convergence(path)
-
+#
 #    path = joinpath(@__DIR__, "heart_scale.jsonl")
 #    with_logger(get_logger(path)) do
-#        run_logreg_l1_data(
+#        run_logreg_linf_data(
 #            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
 #            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
 #    end
 #    plot_convergence(path)
-
+#
 #    path = joinpath(@__DIR__, "heart_scale.jsonl")
-#        run_logreg_l1_data(
+#        run_logreg_linf_data(
 #            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
 #            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
 #    with_logger(get_logger(path)) do
-#        run_logreg_l1_data(
+#        run_logreg_linf_data(
 #            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
 #            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
 #    end
 #    plot_convergence(path)
-
+#
 #    path = joinpath(@__DIR__, "phishing.jsonl")
 #    with_logger(get_logger(path)) do
-#        run_logreg_l1_data(
+#        run_logreg_linf_data(
 #            joinpath(@__DIR__, "..", "datasets", "phishing"),
 #            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
@@ -257,7 +258,7 @@ function main()
 #    plot_convergence(path)
 end
 
-main()
-#if abspath(PROGRAM_FILE) == @__FILE__
-#    main()
-#end
+#main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

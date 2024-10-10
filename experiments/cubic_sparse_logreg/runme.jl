@@ -76,6 +76,16 @@ function run_cubic_logreg_data(
     gam_init = norm(x0 - x_pert)^2 / dot(grad_x - grad_x_pert, x0 - x_pert) 
 
     # run algorithm with 1/10 the tolerance to get "accurate" solution
+    sol, numit = AdaProx.aapga_mj(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        tol = tol,
+        maxit = maxit,
+        name = "AA-PG-MJ"
+    )
     sol, numit = AdaProx.adaptive_proxgrad(
         x0,
         f = f,
@@ -129,15 +139,15 @@ function run_cubic_logreg_data(
         name = "AdaPGM (Ours)",
     )
 
-    sol, numit = AdaProx.agraal(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma0 = gam_init,
-        tol = tol,
-        maxit = maxit,
-        name = "aGRAAL"
-    )
+#    sol, numit = AdaProx.agraal(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma0 = gam_init,
+#        tol = tol,
+#        maxit = maxit,
+#        name = "aGRAAL"
+#    )
 end
 
 function plot_convergence(path)
