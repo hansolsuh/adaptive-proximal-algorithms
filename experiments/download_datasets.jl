@@ -46,4 +46,8 @@ if abspath(PROGRAM_FILE) == @__FILE__
         "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/regression/housing_scale",
         target_path,
     )
+    download_maybe(
+        "https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/binary/madelon.t",
+        target_path,
+    )
 end

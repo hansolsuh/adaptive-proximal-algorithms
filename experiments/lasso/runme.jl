@@ -89,6 +89,19 @@ function run_random_lasso(;
 
 
     # Comment out un-needed method
+    sol, numit = AdaProx.aapga_mj(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 0,
+        tol = tol,
+        maxit = maxit,
+        name = "AA-PG-MJ"
+    )
+
+    # Comment out un-needed method
     sol, numit = AdaProx.fixed_proxgrad(
         zeros(n),
         f = AdaProx.Counting(f),
@@ -132,19 +145,6 @@ function run_random_lasso(;
         tol = tol,
         maxit = maxit,
         name = "Nesterov (fixed)"
-    )
-
-    # Comment out un-needed method
-    sol, numit = AdaProx.aapga_mj(
-        zeros(n),
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        aa_size = 5,
-        aa_reg = 0,
-        tol = tol,
-        maxit = maxit,
-        name = "AA-PG-MJ"
     )
 
 
@@ -220,7 +220,7 @@ function plot_convergence(path)
 end
 
 function main()
-    run_random_lasso(m=5, n=10, pfactor=5,maxit=200, tol=1e-7, seed=0)
+#    run_random_lasso(m=5, n=10, pfactor=5,maxit=200, tol=1e-7, seed=0)
     col = [
         (100, 300, 10),
         (500, 1000, 10),
@@ -244,7 +244,7 @@ end
 
 # Just main() for debuging on VSCode,
 # if... for running it on terminal to generate plot,
-main()
-#if abspath(PROGRAM_FILE) == @__FILE__
-#    main()
-#end
+#main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

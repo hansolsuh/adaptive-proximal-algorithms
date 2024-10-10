@@ -192,10 +192,18 @@ end
 # Returns array of alpha
 function aa_lsq(R, reg)
     RTR = R' * R
+    R_norm = opnorm(RTR)
+    RTR = RTR ./ R_norm
     n = size(RTR,2)
     b = ones(n)
     RTR = RTR + reg*I
-    x = RTR \ b
+    x = 0 #UNDEF error.... 
+    try
+        x = RTR \ b
+    catch
+        x = qr(RTR, Val(true)) \ b
+    end
+#    x = qr(RTR, Val(true)) \ b
     temp = sum(x)
     alpha = x / temp
     return alpha
@@ -229,42 +237,49 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
     y, y_prev = x0, x0
     fx, grad_x = eval_with_gradient(f, x)
 
-    y = x0 - gamma*grad_x
-    x, _ = prox(g, y, gamma)
-    gk = y
-    r = gk - y
+    y_ext = x
+    gk = x - gamma*grad_x
+    r = gk - y_ext
+    G = aa_append_mat(G, gk, aa_size)
+    R = aa_append_mat(R, r, aa_size)
+
+    y_ext = gk
+    x, _ = prox(g, y_ext, gamma) # Why negative??
 
     for it = 1:maxit
-
         mk = min(aa_size, it)
         fx, grad_x = eval_with_gradient(f, x)
-        gk = x - gamma*grad_x
-        r = gk - y
 
+        gk = x - gamma*grad_x
+        r = gk - y_ext
         G = aa_append_mat(G, gk, aa_size)
         R = aa_append_mat(R, r, aa_size)
+
+        x_prox, g_x =  prox(g, gk, gamma)
+        grad_map = (x - x_prox) ./ gamma
+
         #Solve for alpha
         alpha = aa_lsq(R, aa_reg)
-        print(alpha)
-        print("\n")
         #Extrapolate
         #Dirty... idk julia
         if (size(alpha,1) == 1)
-            y_ext =  G * alpha[1]
+            y_test =  G * alpha[1]
         else
-            y_ext =  G * alpha
+            y_test =  G * alpha
         end
-        x_test, g_x =  prox(g, y_ext, gamma)
+        x_test, g_x =  prox(g, y_test, gamma)
 
         # sufficient descent condition
         f_test, grad_test = eval_with_gradient(f, x_test)
-        if f_test - fx <=  -0.5*gamma*(grad_x'grad_x)
+        if f_test - fx <=  -0.5*gamma*(grad_map'grad_map)
+            y_ext = y_test
             x = x_test
-            y = y_ext
+            fx = f_test
+            grad_x = grad_test
         else
-            println("Iter : $(it), AA Failed")
-            x, g_x = prox(g, gk, gamma)
-            y = gk
+            y_ext = gk
+            x = x_prox
+            fx, grad_x = eval_with_gradient(f, x)
         end
         norm_res = norm(x - gk) / gamma
         without_counting() do

@@ -10,35 +10,44 @@ using DataFrames
 using Plots
 using LaTeXStrings
 using ProximalCore
-using ProximalOperators: NormL1
+using ProximalOperators: IndBallLinf
 using AdaProx
 
 pgfplotsx()
 
-struct LogisticLoss{TX,Ty}
+#Constrained logistic regression of Mai-Johansson
+
+struct LogisticLoss2{TX,Ty,R}
     X::TX
     y::Ty
+    c::R
 end
 
-function AdaProx.eval_with_pullback(f::LogisticLoss, w)
-    logits = f.X * w[1:end-1] .+ w[end]
-    u = 1 .+ exp.(-logits)
+# f(x) = (1/m)*sum_{i=1}^m log(1 + exp(-b_i*(ai'*x))) + 0.5*alpha*||x||^2 with ai in R^n, bi in R
+function AdaProx.eval_with_pullback(f::LogisticLoss2, w)
+    (m,n) = size(f.X)
+    yX = f.X .* f.y
+    yXw = yX * w
+
+    loss = - yXw
+
+    mask = yXw .> -50
+    loss[mask] = log.(1. .+ exp.(-yXw[mask]))
+
+    fval = sum(loss) / m + 0.5* f.c * (w'w)
 
     function logistic_loss_pullback()
-        probs = 1 ./ u
-        N = size(f.y, 1)
-        grad = zero(w)
-        grad[1:end-1] .= f.X' * (probs - f.y) ./ N
-        grad[end] = mean(probs - f.y)
-        return grad
+        p = -1. ./ (1. .+ exp.(yXw))
+        g = (yX'p) ./ (m + 0.5*f.c*(w'w))
+        return g
     end
 
-    return -mean((f.y .- 1) .* logits .- log.(u)), logistic_loss_pullback
+    return fval, logistic_loss_pullback
 end
 
-(f::LogisticLoss)(w) = AdaProx.eval_with_pullback(f, w)[1]
+(f::LogisticLoss2)(w) = AdaProx.eval_with_pullback(f, w)[1]
 
-function run_logreg_l1_data(
+function run_logreg_linf_data(
     filename,
     ::Type{T} = Float64;
     lam,
@@ -47,22 +56,30 @@ function run_logreg_l1_data(
 ) where {T}
    @info "Start L1 Logistic Regression ($filename)"
 
-    X, y = load_libsvm_dataset(filename, T, labels = [0.0, 1.0])
+    X, y = load_libsvm_dataset(filename, T, labels = [-1.0, 1.0])
 
     m, n = size(X)
-    n = n + 1
 
-    f = LogisticLoss(X, y)
-    g = NormL1(T(lam))
+    f = LogisticLoss2(X, y, lam)
+    g = IndBallLinf(T(1.))
 
-    X1 = [X ones(m)]
-    Lf = norm(X1 * X1') / 4 / m
+    Lf = opnorm(Array(f.X))^2 / m / 4
 
     x0 = zeros(n)
 
     #comment out un-needed algorithm
     gam_init = 1.0 / Lf
     # run algorithm with 1/10 the tolerance to get "accurate" solution
+    sol, numit = AdaProx.aapga_mj(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        tol = tol,
+        maxit = maxit/2,
+        name = "AA-PG-MJ"
+    )
 #    sol, numit = AdaProx.adapgm_my1(
 #        x0,
 #        f = f,
@@ -123,16 +140,6 @@ function run_logreg_l1_data(
         tol = tol,
         maxit = maxit/2,
         name = "Nesterov (fixed)"
-    )
-    sol, numit = AdaProx.aapga_mj(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        aa_size = 5,
-        tol = tol,
-        maxit = maxit/2,
-        name = "AA-PG-MJ"
     )
 
 #    sol, numit = AdaProx.adaptive_proxgrad(
@@ -195,52 +202,62 @@ function plot_convergence(path)
 end
 
 function main()
+
+        run_logreg_linf_data(
+            joinpath(@__DIR__, "..", "datasets", "madelon.t"),
+            lam = 0.1, maxit = 2000, tol = 1e-7
+        )
+
+#    path = joinpath(@__DIR__, "madelon.t.jsonl")
+#    with_logger(get_logger(path)) do
+#        run_logreg_linf_data(
+#            joinpath(@__DIR__, "..", "datasets", "madelon.t"),
+#            lam = 0.1, maxit = 2000, tol = 1e-7
+#        )
+#    end
+#    plot_convergence(path)
+#    path = joinpath(@__DIR__, "mushrooms.jsonl")
+#    with_logger(get_logger(path)) do
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
+#            lam = 0.1, maxit = 2000, tol = 1e-7
+#        )
+#    end
+#    plot_convergence(path)
+
+#    path = joinpath(@__DIR__, "heart_scale.jsonl")
+#    with_logger(get_logger(path)) do
 #        run_logreg_l1_data(
 #            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-#            lam = 0.01, maxit = 2000, tol = 1e-7
+#            lam = 0.1, maxit = 2000, tol = 1e-7
 #        )
-    path = joinpath(@__DIR__, "mushrooms.jsonl")
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "mushrooms"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
-    plot_convergence(path)
+#    end
+#    plot_convergence(path)
 
-    path = joinpath(@__DIR__, "heart_scale.jsonl")
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
-    plot_convergence(path)
+#    path = joinpath(@__DIR__, "heart_scale.jsonl")
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
+#            lam = 0.1, maxit = 2000, tol = 1e-7
+#        )
+#    with_logger(get_logger(path)) do
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
+#            lam = 0.1, maxit = 2000, tol = 1e-7
+#        )
+#    end
+#    plot_convergence(path)
 
-    path = joinpath(@__DIR__, "heart_scale.jsonl")
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
-    plot_convergence(path)
-
-    path = joinpath(@__DIR__, "phishing.jsonl")
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "phishing"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
-    plot_convergence(path)
+#    path = joinpath(@__DIR__, "phishing.jsonl")
+#    with_logger(get_logger(path)) do
+#        run_logreg_l1_data(
+#            joinpath(@__DIR__, "..", "datasets", "phishing"),
+#            lam = 0.1, maxit = 2000, tol = 1e-7
+#        )
+#    end
+#    plot_convergence(path)
 end
 
-#main()
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end
