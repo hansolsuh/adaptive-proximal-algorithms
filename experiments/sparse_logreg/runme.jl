@@ -134,6 +134,17 @@ function run_logreg_l1_data(
         maxit = maxit/2,
         name = "AA-PG-MJ"
     )
+    sol, numit = AdaProx.aapga_mj(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        tol = tol,
+        maxit = maxit/2,
+        aa_type = 2,
+        name = "AA-PG-MJ-NNEG"
+    )
 
 #    sol, numit = AdaProx.adaptive_proxgrad(
 #        x0,

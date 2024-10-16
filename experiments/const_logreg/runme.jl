@@ -78,8 +78,20 @@ function run_logreg_linf_data(
         aa_size = 5,
         tol = tol,
         maxit = maxit/2,
+        aa_type = 2,
+        name = "AA-PG-MJ-NNEG"
+    )
+    sol, numit = AdaProx.aapga_mj(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        tol = tol,
+        maxit = maxit/2,
         name = "AA-PG-MJ"
     )
+
 #    sol, numit = AdaProx.adapgm_my1(
 #        x0,
 #        f = f,
@@ -212,7 +224,7 @@ function main()
     with_logger(get_logger(path)) do
         run_logreg_linf_data(
             joinpath(@__DIR__, "..", "datasets", "madelon.t"),
-            lam = 0.1, maxit = 2000, tol = 1e-7
+            lam = 0.1, maxit = 200, tol = 1e-7
         )
     end
     plot_convergence(path)

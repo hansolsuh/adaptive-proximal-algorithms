@@ -86,6 +86,17 @@ function run_cubic_logreg_data(
         maxit = maxit,
         name = "AA-PG-MJ"
     )
+    sol, numit = AdaProx.aapga_mj(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        tol = tol,
+        aa_type = 2,
+        maxit = maxit,
+        name = "AA-PG-MJ-NNEG"
+    )
     sol, numit = AdaProx.adaptive_proxgrad(
         x0,
         f = f,

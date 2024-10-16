@@ -3,6 +3,8 @@ module AdaProx
 using Logging
 using LinearAlgebra
 using ProximalCore: prox, convex_conjugate, Zero
+using ProximalOperators: IndSimplex, LeastSquares
+using ProximalAlgorithms
 
 const Record = Logging.LogLevel(-1)
 
@@ -209,6 +211,22 @@ function aa_lsq(R, reg)
     return alpha
 end
 
+#Solve for alpha for AA, 
+#with modification such that alpha_i >= 0
+# alpha \gets argmin_alpha ||Ra||_2^2 s.t. a_i >= 0, \sum_i a_i = 1
+# No closed form solution for this - need alternating type algorithm (FISTA in this case)
+function aa_lsq_nneg(R)
+    (m,n) = size(R)
+    simp = IndSimplex(1.)
+    ffb = ProximalAlgorithms.FastForwardBackward()
+    RTR = R'*R
+    b = zeros(n)
+    λ = 2
+    ff = LeastSquares(RTR,b,λ)
+    sol, iter = ffb(x0=zeros(n), f=ff, g=simp)
+    return sol
+end
+
 # Takes matrix A,  appends vector x, and pops first col if colsize is > n
 function aa_append_mat(A, x, n)
     A = isempty(A) ? x : hcat(A, x)
@@ -220,8 +238,16 @@ function aa_append_mat(A, x, n)
 end
 
 #AA-PGA
-function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = nothing, aa_reg = 1e-10, maxit = 10_000, name = "Anderson Accelerated Proximal Gradient by Mai-Johansson")
+#Options for sufficient decrease condition:
+# sd_cond : 1 : gamma/2 \| \nabla f(x) \|_2^2
+# sd_cond : 2 : gamma/2 \| x - x_test \|_2^2, where x_test = prox(g, y_test, gamma)
+# Options for AALSQ type:
+# aa_type: 1: regular
+# aa_type 2: nonnegative one (alpha_i >= 0)
+function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = nothing, aa_reg = 1e-10, maxit = 10_000, sd_cond = 1, aa_type = 1,name = "Anderson Accelerated Proximal Gradient by Mai-Johansson")
     @assert (gamma === nothing) != (Lf === nothing)
+    @assert (sd_cond == 1 || sd_cond == 2) "sd_cond is either 1 or 2"
+    @assert (aa_type == 1 || aa_type == 2) "aa_type is either 1 or 2"
     if gamma === nothing
         gamma = 1 / Lf
     end
@@ -259,7 +285,13 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
         grad_map = (x - x_prox) ./ gamma
 
         #Solve for alpha
-        alpha = aa_lsq(R, aa_reg)
+        if aa_type == 1
+            alpha = aa_lsq(R, aa_reg)
+        elseif aa_type == 2
+            alpha = aa_lsq_nneg(R)
+        end
+
+        #Log alpha TODO
         #Extrapolate
         #Dirty... idk julia
         if (size(alpha,1) == 1)
@@ -271,7 +303,13 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
 
         # sufficient descent condition
         f_test, grad_test = eval_with_gradient(f, x_test)
-        if f_test - fx <=  -0.5*gamma*(grad_map'grad_map)
+
+        if sd_cond == 1
+            cert = f_test - fx + 0.5*gamma*(grad_x'grad_x)
+        elseif sd_cond == 2
+            cert = f_test - fx + 0.5*gamma*(grad_map'grad_map)
+        end
+        if cert <= 0
             y_ext = y_test
             x = x_test
             fx = f_test
@@ -283,7 +321,7 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
         end
         norm_res = norm(x - gk) / gamma
         without_counting() do
-            @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+            @logmsg Record "" method=name it gamma norm_res alpha objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         end
     end
     return x, maxit

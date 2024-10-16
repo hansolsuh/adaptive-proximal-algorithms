@@ -95,7 +95,7 @@ function run_random_lasso(;
         g = g,
         gamma = gam_init,
         aa_size = 5,
-        aa_reg = 0,
+        aa_reg = 1e-10, 
         tol = tol,
         maxit = maxit,
         name = "AA-PG-MJ"
