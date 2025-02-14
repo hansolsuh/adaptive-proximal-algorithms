@@ -9,7 +9,7 @@ using DataFrames
 using Plots
 using LaTeXStrings
 using Random
-using ProximalCore: Zero
+using ProximalCore: Zero, convex_conjugate, prox
 using ProximalOperators: NormL1, NormL2, Translate
 using AdaProx
 
@@ -39,6 +39,17 @@ function run_least_absolute_deviation(
     f = Zero()
     g = NormL1(lambda)
     h = Translate(NormL1(), -y)
+    h_conj = convex_conjugate(h)
+    temp = zeros(size(y))
+
+    hneg = Translate(NormL1(), y)
+    hneg_conj = convex_conjugate(hneg)
+
+    hneg2 = convex_conjugate(NormL1())
+    hneg_conj2 = Translate(hneg2, -y)
+    testing, _ = prox(h_conj, temp,0.0054132506275331328)
+    testing2, _ = prox(hneg_conj, temp,0.0054132506275331328)
+    testing3, _ = prox(hneg_conj2, temp,0.0054132506275331328)
     A = hcat(Matrix(X), ones(m, 1))
 
     Lf = 0.0
@@ -48,36 +59,36 @@ function run_least_absolute_deviation(
     t_values = [1]
 
     #Comment out unneeded method
-    solx, soly, numit = AdaProx.condat_vu(
-        zeros(n + 1),
-        zeros(m);
-        f = f,
-        g = g,
-        h = h,
-        A = AdaProx.Counting(A),
-        Lf = Lf,
-        norm_A,
-        maxit = maxit,
-        tol = tol,
-        name = "Condat-Vu"
-    )
-
-    for t in t_values
-        solx, soly, numit = AdaProx.malitsky_pock(
-            zeros(n + 1),
-            zeros(m);
-            f = f,
-            g = g,
-            h = h,
-            A = AdaProx.Counting(A),
-            sigma = 1.0,
-            t = t,
-            maxit = maxit,
-            tol = tol,
-            name = "Malitsky-Pock (t=$t)",
-        )
-    end
-
+#    solx, soly, numit = AdaProx.condat_vu(
+#        zeros(n + 1),
+#        zeros(m);
+#        f = f,
+#        g = g,
+#        h = h,
+#        A = AdaProx.Counting(A),
+#        Lf = Lf,
+#        norm_A,
+#        maxit = maxit,
+#        tol = tol,
+#        name = "Condat-Vu"
+#    )
+#
+#    for t in t_values
+#        solx, soly, numit = AdaProx.malitsky_pock(
+#            zeros(n + 1),
+#            zeros(m);
+#            f = f,
+#            g = g,
+#            h = h,
+#            A = AdaProx.Counting(A),
+#            sigma = 1.0,
+#            t = t,
+#            maxit = maxit,
+#            tol = tol,
+#            name = "Malitsky-Pock (t=$t)",
+#        )
+#    end
+#
     # eta = norm_A for non-linesearch, eta = 1 to trigger linesearch (kinda like bool)
     for t in t_values
         solx, soly, numit = AdaProx.adaptive_linesearch_primal_dual_my(
@@ -87,8 +98,9 @@ function run_least_absolute_deviation(
             g = g,
             h = h,
             A = AdaProx.Counting(A),
-#            eta = norm_A,
-            eta = 1,
+            eta = norm_A,
+            R = 1,
+#            eta = 1,
             t = t,
             maxit = maxit,
             tol = tol,
@@ -148,6 +160,13 @@ end
 
 function main(; maxit = 5_000)
     keys_to_log = [:method, :norm_res, :A_evals, :At_evals]
+
+    run_least_absolute_deviation(
+        joinpath(@__DIR__, "../", "datasets", "housing_scale"),
+        maxit = maxit,
+        tol = 1e-5,
+        lambda = 1e1,
+    )
 
     #Housing scale is smallest dataset
     #Perhaps comment out other problem sets

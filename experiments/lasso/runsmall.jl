@@ -69,6 +69,7 @@ function run_random_lasso(;
         end
     end
     A = C * diagm(0 => alpha)   # scaling the columns of Cin
+    A = abs.(A) #1D too small?
     # generate the primal solution
     x_star = zeros(n)
     for i = 1:n
@@ -83,28 +84,19 @@ function run_random_lasso(;
     @logmsg AdaProx.Record "" method=nothing it=1 objective=optimum
 
     Lf = opnorm(A)^2
-#    gam_init = 1 / Lf
-    gam_init = 1
+    gam_init = 1 / Lf
+    gam_init = 0.1*gam_init
     f = LinearLeastSquares(A, b)
     g = NormL1(lam)
 
-
-    # Comment out un-needed method
-#    sol, numit = AdaProx.aapga_mj(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma = gam_init,
-#        aa_size = 5,
-#        aa_reg = 1e-10, 
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AA-PG-MJ"
-#    )
+    # starting with bad init to increase iter. i think optimal is like 0.01 or sth
+    initx0 = 100*ones(n)
 
     # Comment out un-needed method
     sol, numit = AdaProx.fixed_proxgrad(
-        zeros(n),
+#        zeros(n),
+#        100*ones(n),
+        -100*ones(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
@@ -112,12 +104,13 @@ function run_random_lasso(;
         maxit = maxit,
         name = "PGM (fixed)"
     )
-
 #    xi_values = [1.5, 2]
     xi_values = [1.05]
     for xi = xi_values
         sol, numit = AdaProx.backtracking_proxgrad(
-            zeros(n),
+           # zeros(n),
+#            100*ones(n),
+           -100*ones(n),
             f = AdaProx.Counting(f),
             g = g,
             gamma0 = gam_init,
@@ -127,20 +120,11 @@ function run_random_lasso(;
             name = "PGM (backtracking)-(xi=$(xi))"
         )
     end
-#
-#    sol, numit = AdaProx.backtracking_nesterov(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma0 = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "Nesterov (backtracking)"
-#    )
-
 
     sol, numit = AdaProx.fixed_nesterov(
-        zeros(n),
+        #zeros(n),
+#        100*ones(n),
+           -100*ones(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
@@ -148,59 +132,22 @@ function run_random_lasso(;
         maxit = maxit,
         name = "Nesterov (fixed)"
     )
-
-    sol, numit = AdaProx.fista_bd_v1(
-        zeros(n),
+    # Comment out un-needed method
+    sol, numit = AdaProx.aa_durst_feb1(
+        #zeros(n),
+#        100*ones(n),
+           -100*ones(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 1e-10,
         tol = tol,
         maxit = maxit,
-        name = "FISTA Fixed Size 3 - BD"
+        name = "AA-FISTA-Becky"
     )
 
-
-#    sol, numit = AdaProx.fixed_fista_aapga(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AAPGA-FISTA (fixed)"
-#    )
-
-#    sol, numit = AdaProx.adaptive_proxgrad(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        rule = AdaProx.MalitskyMishchenkoRule(gamma = gam_init),
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AdaPGM (MM)"
-#    )
-
-#    sol, numit = AdaProx.adaptive_proxgrad(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        rule = AdaProx.OurRule(gamma = gam_init),
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AdaPGM (Ours)"
-#    )
-
-#    sol2, numit2 = AdaProx.adapgm_my1(
-#        zeros(n),
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        rule = AdaProx.OurRule(gamma = gam_init),
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AdaPGM (Ours)"
-#    )
-#
-#    xxxx = numit2
+    println(sol)
 end
 
 function plot_convergence(path)
@@ -233,10 +180,9 @@ end
 
 function main()
 #    run_random_lasso(m=5, n=10, pfactor=5,maxit=200, tol=1e-7, seed=0)
+   run_random_lasso(m = 10, n = 1, pfactor = 10, maxit = 2000, tol = 1e-7, seed = 0)
     col = [
-        (100, 300, 10),
-        (500, 1000, 10),
-        (4000, 1000, 10),
+        (10, 1, 10),
     ]
     for (m, n, pf) in col
         path = joinpath(@__DIR__, "lasso_$(m)_$(n)_$(pf).jsonl")
@@ -245,7 +191,7 @@ function main()
                 m = m,
                 n = n,
                 pfactor = pf,
-                maxit = 2000,
+                maxit = 8,
                 tol = 1e-7,
                 seed = 0,
             )
@@ -256,7 +202,7 @@ end
 
 # Just main() for debuging on VSCode,
 # if... for running it on terminal to generate plot,
-#main()
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end

@@ -2,7 +2,7 @@ module AdaProx
 
 using Logging
 using LinearAlgebra
-using ProximalCore: prox, convex_conjugate, Zero
+using ProximalCore: prox, gradient, convex_conjugate, Zero
 using ProximalOperators: IndSimplex, LeastSquares
 using ProximalAlgorithms
 
@@ -135,6 +135,66 @@ function fixed_nesterov(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing
     return x, maxit
 end
 
+
+function fista_bd_v1(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "FISTA with Fixed Stepsize - BD")
+    @assert (gamma === nothing) != (Lf === nothing)
+    if gamma === nothing
+        gamma = 1 / (2*Lf)
+    end
+    mu = muf + mug
+    q = gamma * mu / (1 + gamma * mug)
+    @assert q < 1
+    if theta === nothing
+        theta = if q > 0
+            1 / sqrt(q)
+        else
+            0
+        end
+    end
+#    @assert 0 <= theta <= 1 / sqrt(q)
+    # x0
+    _, grad_x = eval_with_gradient(f, x0)
+
+    # Iteration 1
+    # x1
+    x = x0
+    x1, g_x    = prox(g, x - gamma * grad_x, gamma)
+    _, grad_x = eval_with_gradient(f, x1)
+
+    # I suppose we can just ignore previous iter one?
+    # x2
+    x2, g_x = prox(g, x1 - gamma * grad_x, gamma)
+    #ignoring 0.5x0+0.5x1 for now.
+
+    alpha = zeros(3)
+    for it = 2:maxit
+        # Compute alpha
+        # alpha_0 = (k+1)/k
+        # alpha_1 = -1 / (k-1)
+        # alpha_2 = 1 / (k*(k-1))
+        alpha[1] = (it+1)/it
+        alpha[2] = -1 / (it -1)
+        alpha[3] = 1 / (it * (it-1))
+
+        y = alpha[1]*x2 + alpha[2]*x1 + alpha[3]*x0
+        _, grad_y = eval_with_gradient(f, y)
+
+        # Copy old iterate
+        x0 = x1
+        x1 = x2
+        x2, g_x = prox(g, y - gamma * grad_y, gamma)
+
+        norm_res = norm(x - y) / gamma
+        without_counting() do
+            @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+        if norm_res <= tol
+            return x, it
+        end
+    end
+    return x, maxit
+end
+
 #Nesterov, but follows Mai-Johansson formulation - (feasible set stuff)
 function fixed_fista_aapga(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "Fixed Nesterov a la AA-MJ formulation")
     @assert (gamma === nothing) != (Lf === nothing)
@@ -189,11 +249,54 @@ function fixed_fista_aapga(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = noth
     return x, maxit
 end
 
+# Y is a list of x_i - gamma grad_f(x_i), given as a matrix, n by min(it, aa_size)
+# This function finds the largest idx I for which
+# Y[:,i] does not contain 0.
+# Makes sense only for 1D for now...
+function find_idx(Y)
+    #Only for 1d now...
+    idx = 0
+    (_,m) = size(Y)
+
+    for it = 1:m
+        if Y[1, it] != 0
+            idx = it
+        end
+    end
+
+    return idx
+end
+
 #Solve for alpha for AA
 # Assumes R matrix is already truncated to be of right size
 # Returns array of alpha
 function aa_lsq(R, reg)
     RTR = R' * R
+    R_norm = opnorm(RTR)
+    RTR = RTR ./ R_norm
+    n = size(RTR,2)
+    b = ones(n)
+    RTR = RTR + reg*I
+    x = 0 #UNDEF error.... 
+    try
+        x = RTR \ b
+    catch
+        x = qr(RTR, Val(true)) \ b
+    end
+#    x = qr(RTR, Val(true)) \ b
+    temp = sum(x)
+    alpha = x / temp
+    return alpha
+end
+
+
+#Solve for alpha for AA
+# Assumes R matrix is already truncated to be of right size
+# Returns array of alpha
+function aa_lsq_w_idx(R, reg, idx)
+    # TODO for more than 1D problem
+    Ridxd = R[:, end-idx+1:end]
+    RTR = Ridxd' * Ridxd
     R_norm = opnorm(RTR)
     RTR = RTR ./ R_norm
     n = size(RTR,2)
@@ -235,6 +338,125 @@ function aa_append_mat(A, x, n)
         A = A[1:end, 2:end]
     end
     return A
+end
+
+function aa_durst_feb1(x0; f,g, aa_size = nothing, aa_reg = 1e-10 , Lf = nothing, muf = 0, mug = 0, gamma = nothing, theta = nothing, tol = 1e-5, maxit = 100_000, name = "FISTA Becky version Feb 05")
+    @assert (gamma === nothing) != (Lf === nothing)
+    if gamma === nothing
+        gamma = 1 / Lf
+    end
+    mu = muf + mug
+    q = gamma * mu / (1 + gamma * mug)
+    @assert q < 1
+    if theta === nothing
+        theta = if q > 0
+            1 / sqrt(q)
+        else
+            0
+        end
+    end
+    @assert 0 <= theta <= 1 / sqrt(q)
+
+    # y = x - gamma * grad_f(x) TODO actually not needed!
+    Y = Array{Float64}(undef, 0, 0)
+    # g = prox(y_i)
+    G = Array{Float64}(undef, 0, 0)
+    # x = x_i
+    X = Array{Float64}(undef, 0, 0)
+    # s = sign(y)
+    S = Array{Float64}(undef, 0, 0)
+    # I = g'(x_i) - gamma gradf(x_i)
+    I = Array{Float64}(undef, 0, 0)
+
+    #TODO only for 1d
+    n = length(x0)
+
+    # x_0
+    x, x_prev = x0, x0
+    _, grad_x = eval_with_gradient(f, x)     # grad_x = gradf(x0)
+    X         = aa_append_mat(X, x, aa_size) # X = [x_0]
+    g_x, _    = gradient(g, x)               # g_y = g'(y_0)
+    ivec      = g_x - gamma * grad_x
+    I         = aa_append_mat(I, ivec, aa_size)
+
+    # x_1
+    y         = x - gamma * grad_x           # y = y_0
+    g_y, _    = gradient(g, y)               # g_y = g'(y_0)
+    s         = (g_y == 0) ? zeros(n) : g_y + grad_x
+
+    # x update
+    x_prev    = x
+    x, g_x    = prox(g, y, gamma)            # x = x_1 = prox(y_0)
+    grad_prev = grad_x
+    _, grad_x = eval_with_gradient(f, x)     # grad_x = gradf(x_1)
+    g_x, _    = gradient(g, x)
+    ivec      = g_x - gamma * grad_x         # Ivec = g'(x) - gamma gradf(x)
+
+    X         = aa_append_mat(X, x, aa_size) # X = [x_0,      x_1]
+    G         = aa_append_mat(G, x, aa_size) # G = [prox(y_0)    ]
+    Y         = aa_append_mat(Y, y, aa_size) # Y = [y_0          ]
+    S         = aa_append_mat(S, s, aa_size) # S = [s_0          ]
+    I         = aa_append_mat(I, ivec, aa_size)
+
+    # x_2
+    y_prev      = y
+    y           = x - gamma * grad_x           # y = y_1
+    g_y, _      = gradient(g, y)               # g_y = g'(y_0)
+    s           = (g_y == 0) ? zeros(n) : g_y + grad_x
+    x_prev      = x
+    x_temp, g_x = prox(g, y, gamma)                 # x_temp = prox(y_1)
+    x           = 0.5 * (x_temp + x_prev)           # x = x_2 = 0.5 * (prox(y_1) + x_1)
+    G           = aa_append_mat(G, x_temp, aa_size) # G = [prox(y_0), prox(y_1)    ]
+    X           = aa_append_mat(X, x, aa_size)      # X = [x_0,       x_1,      x_2]
+
+    for it = 1:maxit
+        grad_prev   = grad_x
+        _, grad_x   = eval_with_gradient(f, x)
+        y           = x - gamma * grad_x             # y = y_i
+
+        g_y, _       = gradient(g, y)               # g_y = g'(y_0)
+        g_x, g_val_x = gradient(g, x)
+        ivec        = g_x - gamma * grad_x         # Ivec = g'(x) - gamma gradf(x)
+        s           = (g_y == 0) ? zeros(n) : g_y + grad_x
+        Y           = aa_append_mat(Y, y, aa_size)
+        S           = aa_append_mat(S, s, aa_size)
+        I           = aa_append_mat(I, ivec, aa_size)
+
+        # Find index
+        # TWO CASES FOR I...
+        # 1. g' undefined -> then I need to flush it
+        # 
+        idx = find_idx(I)
+        if idx > 0
+            x_temp, g_x_temp = prox(g, y, gamma)
+            G                = aa_append_mat(G, x_temp, aa_size)
+            mk               = min(2, idx)
+            # Solve AA Lsq TODO not using mk yet
+            alpha = aa_lsq_w_idx(S, aa_reg, mk)
+            # Mixing
+            if (size(alpha,1) == 1)
+                x = G * alpha[1]
+            else
+                x = G[:,end-mk+1:end] * alpha
+            end
+        else
+            println("ELSE DETECTED!!!")
+            x, g_val_x = prox(g, y, gamma)
+            G      = aa_append_mat(G, x, aa_size)
+        end
+
+        println("Iter : $(it), idx: $(idx), S: $(S), alpha: $(alpha)")
+        X = aa_append_mat(X, x, aa_size)
+
+        norm_res = norm(x - y) / gamma
+        without_counting() do
+            @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_val_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+        if norm_res <= tol
+            return x, it
+        end
+    end
+    return x, maxit
 end
 
 #AA-PGA

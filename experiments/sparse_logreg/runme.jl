@@ -124,27 +124,36 @@ function run_logreg_l1_data(
         maxit = maxit/2,
         name = "Nesterov (fixed)"
     )
-    sol, numit = AdaProx.aapga_mj(
+    sol, numit = AdaProx.fista_bd_v1(
         x0,
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
-        aa_size = 5,
         tol = tol,
         maxit = maxit/2,
-        name = "AA-PG-MJ"
+        name = "FISTA Fixed Step Size 3 BD"
     )
-    sol, numit = AdaProx.aapga_mj(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        aa_size = 5,
-        tol = tol,
-        maxit = maxit/2,
-        aa_type = 2,
-        name = "AA-PG-MJ-NNEG"
-    )
+#    sol, numit = AdaProx.aapga_mj(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma = gam_init,
+#        aa_size = 5,
+#        tol = tol,
+#        maxit = maxit/2,
+#        name = "AA-PG-MJ"
+#    )
+#    sol, numit = AdaProx.aapga_mj(
+#        x0,
+#        f = AdaProx.Counting(f),
+#        g = g,
+#        gamma = gam_init,
+#        aa_size = 5,
+#        tol = tol,
+#        maxit = maxit/2,
+#        aa_type = 2,
+#        name = "AA-PG-MJ-NNEG"
+#    )
 
 #    sol, numit = AdaProx.adaptive_proxgrad(
 #        x0,
@@ -156,15 +165,15 @@ function run_logreg_l1_data(
 #        name = "AdaPGM (MM)"
 #    )
 #
-#    sol, numit = AdaProx.adaptive_proxgrad(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        rule = AdaProx.OurRule(gamma = gam_init),
-#        tol = tol,
-#        maxit = maxit,
-#        name = "AdaPGM (Ours)"
-#    )
+    sol, numit = AdaProx.adaptive_proxgrad(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        rule = AdaProx.OurRule(gamma = gam_init),
+        tol = tol,
+        maxit = maxit,
+        name = "AdaPGM (Ours)"
+    )
 #
 #    sol, numit = AdaProx.agraal(
 #        x0,
@@ -206,10 +215,10 @@ function plot_convergence(path)
 end
 
 function main()
-#        run_logreg_l1_data(
-#            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-#            lam = 0.01, maxit = 2000, tol = 1e-7
-#        )
+        run_logreg_l1_data(
+            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
+            lam = 0.01, maxit = 2000, tol = 1e-7
+        )
     path = joinpath(@__DIR__, "mushrooms.jsonl")
     with_logger(get_logger(path)) do
         run_logreg_l1_data(
