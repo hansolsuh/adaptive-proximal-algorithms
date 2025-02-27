@@ -1,5 +1,6 @@
 include(joinpath(@__DIR__, "..", "libsvm.jl"))
 include(joinpath(@__DIR__, "..", "logging.jl"))
+include("../myl1.jl")
 
 using Random
 using LinearAlgebra
@@ -10,7 +11,8 @@ using DataFrames
 using Plots
 using LaTeXStrings
 using ProximalCore
-using ProximalOperators: NormL1
+using ProximalOperators
+using .MyNormL1Module
 using AdaProx
 
 pgfplotsx()
@@ -53,7 +55,7 @@ function run_logreg_l1_data(
     n = n + 1
 
     f = LogisticLoss(X, y)
-    g = NormL1(T(lam))
+    g = MyNormL1(T(lam))
 
     X1 = [X ones(m)]
     Lf = norm(X1 * X1') / 4 / m
@@ -121,17 +123,8 @@ function run_logreg_l1_data(
         g = g,
         gamma = gam_init,
         tol = tol,
-        maxit = maxit/2,
+        maxit = maxit,
         name = "Nesterov (fixed)"
-    )
-    sol, numit = AdaProx.fista_bd_v1(
-        x0,
-        f = AdaProx.Counting(f),
-        g = g,
-        gamma = gam_init,
-        tol = tol,
-        maxit = maxit/2,
-        name = "FISTA Fixed Step Size 3 BD"
     )
 #    sol, numit = AdaProx.aapga_mj(
 #        x0,
@@ -172,18 +165,53 @@ function run_logreg_l1_data(
         rule = AdaProx.OurRule(gamma = gam_init),
         tol = tol,
         maxit = maxit,
-        name = "AdaPGM (Ours)"
+        name = "AdaPGM"
     )
-#
-#    sol, numit = AdaProx.agraal(
-#        x0,
-#        f = AdaProx.Counting(f),
-#        g = g,
-#        gamma0 = gam_init,
-#        tol = tol,
-#        maxit = maxit,
-#        name = "aGRAAL"
-#    )
+    sol, numit = AdaProx.aapga_mj(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        tol = tol,
+        maxit = maxit,
+        name = "AAPG - MJ"
+    )
+    sol, numit = AdaProx.aafista_multidim(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 1e-10,
+        na = 2,
+        tol = tol,
+        maxit = maxit,
+        name = "AAFISTA 2"
+    )
+    sol, numit = AdaProx.aafista_multidim(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 1e-10,
+        na = 3,
+        tol = tol,
+        maxit = maxit,
+        name = "AAFISTA 3"
+    )
+    sol, numit = AdaProx.aafista_multidim(
+        x0,
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 1e-10,
+        na = 5,
+        tol = tol,
+        maxit = maxit,
+        name = "AAFISTA 5"
+    )
 end
 
 function plot_convergence(path)
@@ -215,15 +243,11 @@ function plot_convergence(path)
 end
 
 function main()
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
     path = joinpath(@__DIR__, "mushrooms.jsonl")
     with_logger(get_logger(path)) do
         run_logreg_l1_data(
             joinpath(@__DIR__, "..", "datasets", "mushrooms"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
+            lam = 0.01, maxit = 500, tol = 1e-7
         )
     end
     plot_convergence(path)
@@ -232,20 +256,7 @@ function main()
     with_logger(get_logger(path)) do
         run_logreg_l1_data(
             joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    end
-    plot_convergence(path)
-
-    path = joinpath(@__DIR__, "heart_scale.jsonl")
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
-        )
-    with_logger(get_logger(path)) do
-        run_logreg_l1_data(
-            joinpath(@__DIR__, "..", "datasets", "heart_scale"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
+            lam = 0.01, maxit = 500, tol = 1e-7
         )
     end
     plot_convergence(path)
@@ -254,13 +265,13 @@ function main()
     with_logger(get_logger(path)) do
         run_logreg_l1_data(
             joinpath(@__DIR__, "..", "datasets", "phishing"),
-            lam = 0.01, maxit = 2000, tol = 1e-7
+            lam = 0.01, maxit = 500, tol = 1e-7
         )
     end
     plot_convergence(path)
 end
 
-#main()
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
-end
+main()
+#if abspath(PROGRAM_FILE) == @__FILE__
+#    main()
+#end

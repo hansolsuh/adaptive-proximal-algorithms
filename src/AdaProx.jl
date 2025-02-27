@@ -48,7 +48,6 @@ function backtrack_stepsize(gamma, f, g, x, f_x, grad_x, shrink=0.5, it=nothing)
         f_z, pb = eval_with_pullback(f, z)
         back_it = back_it + 1
     end
-#    println("backtracking iter : $(back_it), stepsize: $(gamma) ")
     return gamma, z, f_z, g_z, pb
 end
 
@@ -58,13 +57,13 @@ function backtracking_proxgrad(x0; f, g, gamma0, xi = 1.0, shrink = 0.5, tol = 1
     for it = 1:maxit
         gamma, z, f_z, g_z, pb = backtrack_stepsize(xi * gamma, f, g, x, f_x, grad_x, shrink, it)
         norm_res = norm(z - x) / gamma
+        ttt = f_z + g_z
         @logmsg Record "" method=name it gamma norm_res objective=(f_z + g_z) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         if norm_res <= tol
             return z, it
         end
         x, f_x = z, f_z
         grad_x = pb()
-#        println("backtracking proxgrad, iter: $(it), f_val: $(f_x), stepsize: $(gamma)")
     end
     return z, maxit
 end
@@ -125,6 +124,7 @@ function fixed_nesterov(x0; f,g, Lf = nothing, muf = 0, mug = 0, gamma = nothing
         x_prev = x
         x, g_x = prox(g, z - gamma * grad_z, gamma)
         norm_res = norm(x - z) / gamma
+        ttt = f(x) + g_x
         without_counting() do
             @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
         end
@@ -263,7 +263,6 @@ function find_idx(Y)
             idx = it
         end
     end
-
     return idx
 end
 
@@ -298,6 +297,9 @@ function aa_lsq_w_idx(R, reg, idx)
     Ridxd = R[:, end-idx+1:end]
     RTR = Ridxd' * Ridxd
     R_norm = opnorm(RTR)
+    if R_norm == 0
+        return NaN
+    end
     RTR = RTR ./ R_norm
     n = size(RTR,2)
     b = ones(n)
@@ -426,18 +428,22 @@ function aa_durst_feb1(x0; f,g, aa_size = nothing, aa_reg = 1e-10 , Lf = nothing
         # TWO CASES FOR I...
         # 1. g' undefined -> then I need to flush it
         # 
-        idx = find_idx(I)
+        idx = find_idx(Y)
         if idx > 0
             x_temp, g_x_temp = prox(g, y, gamma)
             G                = aa_append_mat(G, x_temp, aa_size)
             mk               = min(2, idx)
             # Solve AA Lsq TODO not using mk yet
             alpha = aa_lsq_w_idx(S, aa_reg, mk)
-            # Mixing
-            if (size(alpha,1) == 1)
-                x = G * alpha[1]
+            if alpha == NaN
+                x = x_temp
             else
-                x = G[:,end-mk+1:end] * alpha
+                # Mixing
+                if (size(alpha,1) == 1)
+                    x = G * alpha[1]
+                else
+                    x = G[:,end-mk+1:end] * alpha
+                end
             end
         else
             println("ELSE DETECTED!!!")
@@ -459,6 +465,275 @@ function aa_durst_feb1(x0; f,g, aa_size = nothing, aa_reg = 1e-10 , Lf = nothing
     return x, maxit
 end
 
+# Checks if any element in the vector is NaN.
+# If it finds a NaN, it returns 0
+function find_idx_w_nan(G)
+    for element in G
+        if isnan(element)
+            return 0
+        end
+    end
+    return length(G)
+end
+
+function find_idx_w_nan_multidim(G)
+    (_,m) = size(G)
+    for element in G
+        if isnan(element)
+            return 0
+        end
+    end
+    return m
+end
+
+function aafista(x0; f,g, aa_size = nothing, aa_reg = 1e-10, Lf = nothing, gamma = nothing, tol = 1e-5, maxit = 100_000, name = "AA FISTA Becky version Feb 17")
+    @assert (gamma === nothing) != (Lf === nothing)
+    if gamma === nothing
+        gamma = 1 / Lf
+    end
+
+    # y = x - gamma * grad_f(x) TODO actually not needed!
+    Y = Array{Float64}(undef, 0, 0)
+    # g = g'(y_i)
+    G = Array{Float64}(undef, 0, 0)
+    # R = g'(y_i) - gamma gradf(x_i)
+    R = Array{Float64}(undef, 0, 0)
+    # x = prox(y_i)
+    X = Array{Float64}(undef, 0, 0)
+
+    #TODO only for 1d
+    n = length(x0)
+
+    # x_1
+    x, x_prev = x0, x0
+    _, grad_x = eval_with_gradient(f, x)     # grad_x = gradf(x0)
+    y         = x - gamma * grad_x           # y      = y_0
+    x, _      = prox(g, y, gamma)            # x_1    = prox(y_0)
+    g_y, _    = gradient(g, y)               # g_y    = g'(y_0)
+    g_y       = (g_y == 0) ? NaN : g_y
+    r         = grad_x + g_y
+    # Data tracking
+    X = aa_append_mat(X, x, aa_size)    # X = [x_0]
+    G = aa_append_mat(G, g_y, aa_size)  # G = [g'(y_0)]
+    R = aa_append_mat(R, r, aa_size)    # R = [grad(x_0) + g'(y_0)]
+    Y = aa_append_mat(Y, y, aa_size)    # Y = [y_0]
+
+    # x_2
+    x_prev    = x
+    _, grad_x = eval_with_gradient(f, x)     # grad_x = gradf(x1)
+    y         = x - gamma * grad_x           # y      = y_1
+    x_temp, _ = prox(g, y, gamma)            # x_temp = prox(y_1)
+    x         = 0.5 * (x_temp + x_prev)
+
+    for it = 1:maxit
+        _, grad_x = eval_with_gradient(f, x)
+        y         = x - gamma * grad_x             # y = y_i
+        g_y, _    = gradient(g, y)
+        g_y       = (g_y == 0) ? NaN : g_y
+        r         = grad_x + g_y
+
+        #TODO only for 1d
+        #is (y-x)/gamma - grad_x good enough?
+        #its what is used for fixed PGM...
+        if abs(r[1]) <= tol
+            return x, it
+        end
+        # Data tracking
+        G = aa_append_mat(G, g_y, aa_size)  # G = [g'(y_0)]
+        R = aa_append_mat(R, r, aa_size)    # R = [grad(x_0) + g'(y_0)]
+        Y = aa_append_mat(Y, y, aa_size)    # Y = [y_0]
+        # Find index
+        # TWO CASES
+        # 1. g' undefined -> then I need to flush it
+        # 
+        idx = find_idx_w_nan(G)
+        if idx > 0
+            x_temp, _ = prox(g, y, gamma)
+            X         = aa_append_mat(X, x_temp, aa_size)
+            #TODO 2 below can be something else
+            mk               = min(2, idx)
+            # Solve AA Lsq TODO not using mk yet
+            alpha = aa_lsq_w_idx(R, aa_reg, mk)
+
+            if alpha == NaN
+              #R mat basically singular...
+              x = x_temp
+            else
+              # Mixing
+              if (size(alpha,1) == 1)
+                  x = X * alpha[1]
+              else
+                  x = X[:,end-mk+1:end] * alpha
+              end
+            end
+            g_val_x = g(x)
+        else
+            println("ELSE DETECTED!!!")
+            x, g_val_x = prox(g, y, gamma)
+            alpha = 0 #to make print statement happy..
+            X = aa_append_mat(X, x, aa_size)
+        end
+
+        println("Iter : $(it), idx: $(idx), G: $(G), alpha: $(alpha)")
+        println("Iter : $(it), R: $(R)")
+        norm_res = norm(x - y) / gamma
+        without_counting() do
+            @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_val_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+        if norm_res <= tol
+            return x, it
+        end
+    end
+    return x, maxit
+end
+
+# For 2d+ problems
+# Checks whether any elements of arris NaN.
+#If so, replace everything with NaN. 
+# else return original
+function vec_nan_replacer(arr)
+    # Check if there are any NaN values in the array
+    if any(isnan, arr)
+        # Return an array of NaNs with the same size as the input
+        return fill(NaN, size(arr))
+    else
+        # Return the original array
+        return arr
+    end
+end
+
+function aafista_multidim(x0; f,g, aa_size = nothing, aa_reg = 1e-10, Lf = nothing, gamma = nothing, na = 2, tol = 1e-5, maxit = 100_000, name = "AA FISTA Becky version Feb 17")
+    @assert (gamma === nothing) != (Lf === nothing)
+    if gamma === nothing
+        gamma = 1 / Lf
+    end
+
+    #na = min(na, idx)
+    #TODO remove later
+    fval     = Inf
+    min_it   = 0
+    fval_min = 0
+    # y = x - gamma * grad_f(x) TODO actually not needed!
+    Y = Array{Float64}(undef, 0, 0)
+    # g = g'(y_i)
+    G = Array{Float64}(undef, 0, 0)
+    # R = g'(y_i) - gamma gradf(x_i)
+    R = Array{Float64}(undef, 0, 0)
+    # x = prox(y_i)
+    X = Array{Float64}(undef, 0, 0)
+
+    n = length(x0)
+    # x_1
+    x, x_prev = x0, x0
+    _, grad_x = eval_with_gradient(f, x)     # grad_x = gradf(x0)
+    y         = x - gamma * grad_x           # y      = y_0
+    x, g_val_x = prox(g, y, gamma)            # x_1    = prox(y_0)
+    g_y, _    = gradient(g, y)               # g_y    = g'(y_0)
+    g_y       = vec_nan_replacer(g_y)
+    r         = grad_x + g_y/n
+    # Data tracking
+    X = aa_append_mat(X, x, aa_size)    # X = [x_0]
+    G = aa_append_mat(G, g_y, aa_size)  # G = [g'(y_0)]
+    R = aa_append_mat(R, r, aa_size)    # R = [grad(x_0) + g'(y_0)]
+    Y = aa_append_mat(Y, y, aa_size)    # Y = [y_0]
+
+    norm_res = norm(x - y) / gamma
+    it = 1
+    without_counting() do
+        @logmsg Record "" method=name it gamma norm_res objective=(f(x) + g_val_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+    end
+
+    # x_2
+    x_prev    = x
+    _, grad_x = eval_with_gradient(f, x)     # grad_x = gradf(x1)
+    y         = x - gamma * grad_x           # y      = y_1
+    x_temp, g_val_x = prox(g, y, gamma)            # x_temp = prox(y_1)
+    x         = 0.5 * (x_temp + x_prev)
+
+    #TODO cant tell whether I need two or one counting before forloop...
+    it = 2
+    norm_res = norm(x - y) / gamma
+    fx = f(x)
+    without_counting() do
+        @logmsg Record "" method=name it gamma norm_res objective=(fx + g_val_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+    end
+
+    for it = 3:maxit
+        _, grad_x = eval_with_gradient(f, x)
+        y         = x - gamma * grad_x             # y = y_i
+        g_y, _    = gradient(g, y)
+        g_y       = vec_nan_replacer(g_y)
+        r         = grad_x + g_y/n
+
+        #is (y-x)/gamma - grad_x good enough?
+        #its what is used for fixed PGM...
+        #Just using norm for now. norm squared? does it really matter?
+        r_norm = norm(r)
+        if norm(r) <= tol
+            return x, it
+        end
+        # Data tracking
+        G = aa_append_mat(G, g_y, aa_size)  # G = [g'(y_0)]
+        R = aa_append_mat(R, r, aa_size)    # R = [grad(x_0) + g'(y_0)]
+        Y = aa_append_mat(Y, y, aa_size)    # Y = [y_0]
+        # Find index
+        # TWO CASES
+        # 1. g' undefined -> then I need to flush it
+        # 
+        idx = find_idx_w_nan_multidim(G)
+        if idx > 0
+            x_temp, _ = prox(g, y, gamma)
+            X         = aa_append_mat(X, x_temp, aa_size)
+            #TODO 2 below can be something else
+            mk               = min(na, idx)
+            # Solve AA Lsq TODO not using mk yet
+            alpha = aa_lsq_w_idx(R, aa_reg, mk)
+
+            if alpha == NaN
+              #R mat basically singular...
+              x = x_temp
+            else
+              # Mixing
+              if (size(alpha,1) == 1)
+                  x = X * alpha[1]
+              else
+                  x = X[:,end-mk+1:end] * alpha
+              end
+            end
+            #Sufficient descent condition Check
+            #F(x_test) \leq F(x_k) - \gamma/2 ||gradf(x_k)||_2^2
+            #gradf(x_k) is old grad. g_val_x should be old g(x). 
+            Fx    = fx + g_val_x
+            Ftest = f(x) + g(x)
+            normgf = dot(grad_x, grad_x)
+            if Ftest > Fx - (gamma/2)*normgf
+                println("SUFFICIENT DESCENT FAILED!!!! at iter $(it)")
+                # Fail. Abort.
+                # Last column of X is x anyway, so its fine actually!
+                x = x_temp
+            end
+            #else is success. no-op, really.
+            g_val_x = g(x)
+        else
+            println("ELSE DETECTED!!! at iter $(it)")
+            x, g_val_x = prox(g, y, gamma)
+            alpha = 0 #to make print statement happy..
+            X = aa_append_mat(X, x, aa_size)
+        end
+#        println("Iter : $(it), idx: $(idx), G: $(G), alpha: $(alpha), r_norm: $(r_norm), fval: $(fval)")
+#        println("Iter : $(it), R: $(R)")
+        println("Iter : $(it), idx: $(idx), alpha: $(alpha), gamma:$(gamma)")
+        norm_res = norm(x - y) / gamma
+        fx = f(x)
+        without_counting() do
+            @logmsg Record "" method=name it gamma norm_res objective=(fx + g_val_x) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) f_evals=eval_count(f)
+        end
+        if norm_res <= tol
+            return x, it
+        end
+    end
+    return x, maxit
+end
 #AA-PGA
 #Options for sufficient decrease condition:
 # sd_cond : 1 : gamma/2 \| \nabla f(x) \|_2^2
@@ -492,7 +767,7 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
     R = aa_append_mat(R, r, aa_size)
 
     y_ext = gk
-    x, _ = prox(g, y_ext, gamma) # Why negative??
+    x, g_x = prox(g, y_ext, gamma) # Why negative??
 
     for it = 1:maxit
         mk = min(aa_size, it)
@@ -503,8 +778,8 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
         G = aa_append_mat(G, gk, aa_size)
         R = aa_append_mat(R, r, aa_size)
 
-        x_prox, g_x =  prox(g, gk, gamma)
-        grad_map = (x - x_prox) ./ gamma
+        #x_prox, g_x =  prox(g, gk, gamma)
+        #grad_map = (x - x_prox) ./ gamma
 
         #Solve for alpha
         if aa_type == 1
@@ -521,25 +796,24 @@ function aapga_mj(x0; f,g, Lf = nothing, gamma = nothing, tol = 1e-5, aa_size = 
         else
             y_test =  G * alpha
         end
-        x_test, g_x =  prox(g, y_test, gamma)
+        x_test, g_x_test =  prox(g, y_test, gamma)
 
         # sufficient descent condition
-        f_test, grad_test = eval_with_gradient(f, x_test)
+        # F(x_test) \leq F(x_k) - \gamma/2 ||gradf(x_k)||_2^2
+        f_test = f(x_test)
+        Fx1      = f_test + g_x_test
+        Fx       = fx + g_x
+        gradfdot = dot(grad_x, grad_x)
 
-        if sd_cond == 1
-            cert = f_test - fx + 0.5*gamma*(grad_x'grad_x)
-        elseif sd_cond == 2
-            cert = f_test - fx + 0.5*gamma*(grad_map'grad_map)
-        end
+        cert = Fx1 - Fx + (gamma/2)*gradfdot
         if cert <= 0
-            y_ext = y_test
-            x = x_test
-            fx = f_test
-            grad_x = grad_test
+            y_ext  = y_test
+            x      = x_test
+            fx     = f_test
+            g_x    = g_x_test
         else
-            y_ext = gk
-            x = x_prox
-            fx, grad_x = eval_with_gradient(f, x)
+            y_ext      = gk
+            x, g_x     = prox(g, gk, gamma)
         end
         norm_res = norm(x - gk) / gamma
         without_counting() do
@@ -911,6 +1185,9 @@ function adaptive_primal_dual(
         dual_res = (w - y) / sigma - A_x
         norm_res = sqrt(norm(primal_res)^2 + norm(dual_res)^2)
 
+        gxx = g(x)
+        ttt = f_x + gxx
+        println("it: $(it), gamma:  $(gamma) objective=$(ttt)")
         without_counting() do
             @logmsg Record "" method=name it gamma sigma norm_res objective=(f_x + g(x) + h(A_x)) grad_f_evals=grad_count(f) prox_g_evals=prox_count(g) prox_h_evals=prox_count(h) A_evals=mul_count(A) At_evals=amul_count(A) f_evals=eval_count(f)
         end

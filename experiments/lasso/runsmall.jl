@@ -1,4 +1,5 @@
 include(joinpath(@__DIR__, "..", "logging.jl"))
+include("../myl1.jl")
 
 using Random
 using LinearAlgebra
@@ -8,7 +9,8 @@ using DataFrames
 using Plots
 using LaTeXStrings
 using ProximalCore
-using ProximalOperators: NormL1
+using ProximalOperators
+using .MyNormL1Module
 using AdaProx
 using Infiltrator
 using Debugger
@@ -32,6 +34,7 @@ function run_random_lasso(;
     m = 400,
     n = 1000,
     pfactor = 5,
+    lam = 1,
     seed = 0,
     tol = 1e-5,
     kappa = 0.01,
@@ -46,7 +49,6 @@ function run_random_lasso(;
 
     p = n / pfactor # nonzeros
     rho = 1 # some positive number controlling how large solution is
-    lam = 10 # hsuh: I change it from 1 to 10
     y_star = rand(m)
     y_star ./= norm(y_star) #y^\star
     C = rand(m, n) .* 2 .- 1
@@ -87,16 +89,16 @@ function run_random_lasso(;
     gam_init = 1 / Lf
     gam_init = 0.1*gam_init
     f = LinearLeastSquares(A, b)
-    g = NormL1(lam)
+    g = MyNormL1(lam)
 
+    tttt = Lf/lam
+    println("L_f / lambda is $(tttt)")
     # starting with bad init to increase iter. i think optimal is like 0.01 or sth
     initx0 = 100*ones(n)
 
     # Comment out un-needed method
     sol, numit = AdaProx.fixed_proxgrad(
-#        zeros(n),
-#        100*ones(n),
-        -100*ones(n),
+        zeros(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
@@ -108,9 +110,7 @@ function run_random_lasso(;
     xi_values = [1.05]
     for xi = xi_values
         sol, numit = AdaProx.backtracking_proxgrad(
-           # zeros(n),
-#            100*ones(n),
-           -100*ones(n),
+            zeros(n),
             f = AdaProx.Counting(f),
             g = g,
             gamma0 = gam_init,
@@ -122,9 +122,7 @@ function run_random_lasso(;
     end
 
     sol, numit = AdaProx.fixed_nesterov(
-        #zeros(n),
-#        100*ones(n),
-           -100*ones(n),
+        zeros(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
@@ -132,27 +130,58 @@ function run_random_lasso(;
         maxit = maxit,
         name = "Nesterov (fixed)"
     )
-    # Comment out un-needed method
-    sol, numit = AdaProx.aa_durst_feb1(
-        #zeros(n),
-#        100*ones(n),
-           -100*ones(n),
+    sol, numit = AdaProx.aapga_mj(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        tol = tol,
+        maxit = maxit,
+        name = "AAPG - MJ"
+    )
+    sol, numit = AdaProx.aafista_multidim(
+        zeros(n),
         f = AdaProx.Counting(f),
         g = g,
         gamma = gam_init,
         aa_size = 5,
         aa_reg = 1e-10,
+        na = 2,
         tol = tol,
         maxit = maxit,
-        name = "AA-FISTA-Becky"
+        name = "AAFISTA 2"
+    )
+    sol, numit = AdaProx.aafista_multidim(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 1e-10,
+        na = 3,
+        tol = tol,
+        maxit = maxit,
+        name = "AAFISTA 3"
+    )
+    sol, numit = AdaProx.aafista_multidim(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        gamma = gam_init,
+        aa_size = 5,
+        aa_reg = 1e-10,
+        na = 5,
+        tol = tol,
+        maxit = maxit,
+        name = "AAFISTA 5"
     )
 
-    println(sol)
 end
 
 function plot_convergence(path)
     df = eachline(path) .|> JSON.parse |> Tables.dictrowtable |> DataFrame
     optimal_value = minimum(df[!, :objective])
+#    println("Optimal value: $(optimal_value)")
     gb = groupby(df, :method)
 
     fig = plot(
@@ -180,18 +209,34 @@ end
 
 function main()
 #    run_random_lasso(m=5, n=10, pfactor=5,maxit=200, tol=1e-7, seed=0)
-   run_random_lasso(m = 10, n = 1, pfactor = 10, maxit = 2000, tol = 1e-7, seed = 0)
+#   run_random_lasso(m = 5, n = 10, pfactor = 1, lam = 10, maxit = 10, tol = 1e-7, seed = 0)
     col = [
-        (10, 1, 10),
+#        (4000, 1, 1, 1),
+#        (4000, 1, 1, 10),
+#        (10, 1, 1, 1),
+#        (10, 1, 1, 10),
+        (100, 300, 30, 0.01),
+        (100, 300, 30, 0.1),
+        (100, 300, 30, 1),
+        (100, 300, 30, 10),
+        (500, 1000, 100, 0.01),
+        (500, 1000, 100, 0.1),
+        (500, 1000, 100, 1),
+        (500, 1000, 100, 10),
+        (4000, 1000, 100, 0.01),
+        (4000, 1000, 100, 0.1),
+        (4000, 1000, 100, 1),
+        (4000, 1000, 100, 10),
     ]
-    for (m, n, pf) in col
-        path = joinpath(@__DIR__, "lasso_$(m)_$(n)_$(pf).jsonl")
+    for (m, n, pf, lam) in col
+        path = joinpath(@__DIR__, "lasso_$(m)_$(n)_$(pf)_$(lam).jsonl")
         with_logger(get_logger(path)) do
             run_random_lasso(
                 m = m,
                 n = n,
                 pfactor = pf,
-                maxit = 8,
+                lam = lam,
+                maxit = 500,
                 tol = 1e-7,
                 seed = 0,
             )
@@ -202,7 +247,7 @@ end
 
 # Just main() for debuging on VSCode,
 # if... for running it on terminal to generate plot,
-main()
-#if abspath(PROGRAM_FILE) == @__FILE__
-#    main()
-#end
+#main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
