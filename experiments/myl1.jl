@@ -21,25 +21,37 @@ With a nonnegative array parameter λ, return the weighted ``L_1`` norm
 f(x) = ∑_i λ_i|x_i|.
 ```
 """
-struct MyNormL1{T}
+struct MyNormL1{T, U}
     lambda::T
-    function MyNormL1{T}(lambda::T) where T
-        if !(eltype(lambda) <: Real)
-            error("λ must be real")
-        end
-        if any(lambda .< 0)
-            error("λ must be nonnegative")
-        else
-            new(lambda)
-        end
-    end
+    eps::U
+#
+#    function MyNormL1{T, U}(lambda::T, eps::U) where {T, U}
+#        if !(eltype(lambda) <: Real)
+#            error("λ must be real")
+#        end
+#        if any(lambda .< 0)
+#            error("λ must be nonnegative")
+#        else
+#            new(lambda)
+#        end
+#        if !(eltype(eps) <: Real)
+#            error("eps must be real")
+#        end
+#        if any(eps.< 0)
+#            error("eps must be nonnegative")
+#        else
+#            new(eps)
+#        end
+#    end
 end
 
 is_separable(f::Type{<:MyNormL1}) = true
 is_convex(f::Type{<:MyNormL1}) = true
 is_positively_homogeneous(f::Type{<:MyNormL1}) = true
 
-MyNormL1(lambda::R=1) where R = MyNormL1{R}(lambda)
+MyNormL1(lambda::T=1, eps::U=0) where {T,U} = MyNormL1{T,U}(lambda,eps)
+#MyNormL1(lambda::R=1, eps::R=0) where R = MyNormL1{R}(lambda,eps)
+#MyNormL1(lambda::R=1) where R = MyNormL1{R}(lambda)
 
 (f::MyNormL1)(x) = f.lambda * norm(x, 1)
 
@@ -129,8 +141,8 @@ end
 function gradient!(y, f::MyNormL1, x)
     y .= f.lambda .* sign.(x)
     for i in eachindex(x)
-        if x[i] == 0
-            y[i] = NaN
+        if x[i] <= f.eps || x[i] >= f.eps
+            y[i] = 2*rand() - 1
         end
     end
     return f(x)

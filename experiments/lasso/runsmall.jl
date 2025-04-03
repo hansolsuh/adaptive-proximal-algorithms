@@ -175,6 +175,15 @@ function run_random_lasso(;
         maxit = maxit,
         name = "AAFISTA 5"
     )
+    sol, numit = AdaProx.adaptive_proxgrad(
+        zeros(n),
+        f = AdaProx.Counting(f),
+        g = g,
+        rule = AdaProx.OurRule(gamma= gam_init),
+        tol = tol,
+        maxit = maxit,
+        name = "AdaPGM"
+    )
 
 end
 
@@ -199,6 +208,7 @@ function plot_convergence(path)
             # each gradient of f is one additional mul with A'
             gb[k][!, :grad_f_evals] + gb[k][!, :f_evals],
             max.(1e-14, gb[k][!, :objective] .- optimal_value),
+#            max.(1e-5, gb[k][!, :objective] .- optimal_value),
             yaxis = :log,
             label = k.method,
         )
@@ -211,10 +221,6 @@ function main()
 #    run_random_lasso(m=5, n=10, pfactor=5,maxit=200, tol=1e-7, seed=0)
 #   run_random_lasso(m = 5, n = 10, pfactor = 1, lam = 10, maxit = 10, tol = 1e-7, seed = 0)
     col = [
-#        (4000, 1, 1, 1),
-#        (4000, 1, 1, 10),
-#        (10, 1, 1, 1),
-#        (10, 1, 1, 10),
         (100, 300, 30, 0.01),
         (100, 300, 30, 0.1),
         (100, 300, 30, 1),
@@ -229,7 +235,7 @@ function main()
         (4000, 1000, 100, 10),
     ]
     for (m, n, pf, lam) in col
-        path = joinpath(@__DIR__, "lasso_$(m)_$(n)_$(pf)_$(lam).jsonl")
+        path = joinpath(@__DIR__, "lasso_$(m)_$(n)_$(pf)_$(lam)_zoomed.jsonl")
         with_logger(get_logger(path)) do
             run_random_lasso(
                 m = m,
